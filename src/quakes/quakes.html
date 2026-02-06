@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Visualización Sísmica - TFG Daniel</title>
+
+    <link href="./style_quakes.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+      /* Estilo para que el mapa ocupe gran parte del viewport (pantalla) */
+      sp-station-quake-map {
+        height: 80vh; /* 80% del alto del viewport */
+        width: 100%;
+        margin: 0;
+      }
+      /* Estilos generales para eliminar el margen que ocuparía la visualización */
+      body {
+        margin: 0;
+        padding: 0 10px; /* Un poco de padding horizontal si lo deseas */
+        font-family: sans-serif;
+      }
+      h3 {
+        margin-top: 10px;
+        margin-bottom: 5px;
+      }
+      /* Estilos para las tarjetas de detalles (opcional, para mejor visualización) */
+      #stationDetailsContainer, #quakeDetailsContainer {
+          padding: 10px;
+          border: 1px solid #ccc;
+          margin-top: 10px;
+          border-radius: 5px;
+          background-color: #f9f9f9;
+      }
+      .quake-card table, .station-card table {
+          width: 100%;
+          border-collapse: collapse;
+      }
+      .quake-card th, .station-card th, 
+      .quake-card td, .station-card td {
+          padding: 5px 10px;
+          text-align: left;
+          border-bottom: 1px dotted #ddd;
+      }
+      .quake-card th, .station-card th {
+          width: 30%;
+          font-weight: bold;
+      }
+      h2 {
+          margin-top: 0;
+          border-bottom: 2px solid #eee;
+          padding-bottom: 5px;
+      }
+      
+      /* ⭐️ NUEVO: ESTILOS DE CARGADOR (LOADER) ⭐️ */
+      .loader {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        margin: 10px auto;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      /* Fin de estilos del loader */
+      
+    </style>
+
+    <link rel="icon" type="image/png" href="/favicon.ico" />
+  </head>
+
+  <body>
+    <h3>
+      Visualización de Eventos Recientes | Evento:
+      <span id="earthquakeDescription">Seleccione un Terremoto</span> | Estación:
+      <span id="stationCode">Seleccione una Estación</span>
+    </h3>
+
+    <div id="mapContainer">
+      <sp-station-quake-map
+        centerLat="37"
+        centerLon="-4"
+        zoomLevel="5"
+        fitBounds="false"
+        tileUrl="https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}"
+        tileAttribution="Tiles &copy; Esri"
+        maxZoom="12"
+      >
+      </sp-station-quake-map>
+    </div>
+
+    <div style="display: flex; gap: 20px;">
+        <div id="quakeDetailsContainer" style="flex: 1;">
+            </div>
+        <div id="stationDetailsContainer" style="flex: 1;">
+            </div>
+    </div>
+    
+    <div id="seismogramDisplayContainer" style="margin-top: 20px;">
+        </div>
+
+
+    <script type="module" src="./quakes.js"></script>
+  </body>
+</html>
