@@ -1,0 +1,588 @@
+/* ═══════════════════════════════════════════════════════════
+   SEISVIEW — station.css
+   Tema oscuro científico, limpio y sin excesos decorativos.
+   Fuentes: Inter (UI) + JetBrains Mono (datos técnicos).
+═══════════════════════════════════════════════════════════ */
+
+/* ── Variables globales ── */
+:root {
+    --bg:           #0d0f12;        /* Fondo app */
+    --bg-panel:     #111318;        /* Fondo paneles laterales */
+    --bg-input:     #0a0c0f;        /* Fondo inputs */
+    --bg-hover:     #181b22;        /* Hover en items de lista */
+    --bg-active:    #1a2540;        /* Item activo (estación seleccionada) */
+
+    --text:         #d8dce8;        /* Texto principal */
+    --text-muted:   #525870;        /* Texto secundario / etiquetas */
+    --text-dim:     #2e3245;        /* Texto muy apagado (separadores, placeholders) */
+    --text-accent:  #5b8df5;        /* Azul acento */
+    --text-live:    #4ade80;        /* Verde "live" */
+    --text-warn:    #f59e0b;        /* Amarillo alerta */
+    --text-danger:  #f87171;        /* Rojo error */
+
+    --border:       #1c1f2a;        /* Bordes generales */
+
+    --accent:       #3b6fd4;        /* Azul acento (botones activos) */
+    --accent-dim:   #162040;        /* Fondo botón activo */
+
+    /* Tamaños de columnas */
+    --col-left:     195px;
+    --col-right:    195px;
+    --nav-h:        40px;
+
+    /* Variables críticas de sincronización entre sismograma y espectrograma.
+       NO modificar sin ajustar también spectrogram.js y waveform.js. */
+    --margin-left:  80px;
+    --margin-right: 30px;
+
+    --font-ui:   'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --radius:   4px;
+    --radius-lg: 6px;
+}
+
+/* ── Reset básico ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: var(--font-ui);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   BARRA DE NAVEGACIÓN SUPERIOR
+═══════════════════════════════════════════════ */
+
+.topnav {
+    height: var(--nav-h);
+    min-height: var(--nav-h);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* Logo de la aplicación */
+.topnav__brand {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    color: var(--text-accent);
+    margin-right: 8px;
+}
+
+/* Contenedor de botones de navegación */
+.topnav__items {
+    display: flex;
+    gap: 2px;
+}
+
+.topnav__item {
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: color 0.12s, background 0.12s;
+}
+
+.topnav__item:hover         { color: var(--text); background: var(--bg-hover); }
+.topnav__item--active       { color: var(--text); background: var(--bg-active); }
+
+/* Zona derecha: reloj + estado conexión */
+.topnav__right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.topnav__utc {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Indicador de estado: bola de color + texto */
+.topnav__status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* Estados del indicador de conexión */
+.topnav__status.is-live  .status-dot { background: var(--text-live); animation: blink 2s ease-in-out infinite; }
+.topnav__status.is-live  #status-text { color: var(--text-live); }
+.topnav__status.is-error .status-dot { background: var(--text-danger); }
+.topnav__status.is-error #status-text { color: var(--text-danger); }
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+/* ═══════════════════════════════════════════════
+   LAYOUT PRINCIPAL — 3 columnas en grid
+═══════════════════════════════════════════════ */
+
+.app-layout {
+    display: grid;
+    grid-template-columns: var(--col-left) 1fr var(--col-right);
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* ── Cabecera reutilizable para los paneles laterales ── */
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.panel-title {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+.panel-count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+}
+
+/* ═══════════════════════════════════════════════
+   COLUMNA IZQUIERDA — Lista de estaciones
+═══════════════════════════════════════════════ */
+
+.col-stations {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+}
+
+/* Buscador de estaciones */
+.search-box {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.search-box input {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--text);
+    outline: none;
+}
+
+.search-box input::placeholder { color: var(--text-dim); }
+.search-box input:focus { border-color: var(--accent); }
+
+/* Lista scrolleable de estaciones */
+.station-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.station-list__empty {
+    padding: 12px 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+/* Etiqueta de grupo (nombre de red) */
+.station-group-label {
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    padding: 8px 10px 3px;
+}
+
+/* Ítem individual de estación */
+.station-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    border-left: 2px solid transparent;
+    transition: background 0.1s, color 0.1s;
+}
+
+.station-item:hover    { background: var(--bg-hover); color: var(--text); }
+.station-item.is-active {
+    background: var(--bg-active);
+    color: var(--text);
+    border-left-color: var(--accent);
+}
+
+/* Punto de estado (verde/amarillo/rojo) */
+.stn-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.stn-dot--online  { background: var(--text-live); }
+.stn-dot--warn    { background: var(--text-warn); }
+.stn-dot--offline { background: var(--text-danger); }
+
+/* ═══════════════════════════════════════════════
+   COLUMNA CENTRAL — Gráficas
+═══════════════════════════════════════════════ */
+
+.col-charts {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* Cabecera de la zona de gráficas: título + tabs */
+.charts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    flex-shrink: 0;
+}
+
+.charts-title {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+/* Selector de vista: Sismograma / Helicorder */
+.tab-switcher {
+    display: flex;
+    gap: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 2px;
+}
+
+.tab-btn {
+    padding: 3px 10px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.tab-btn:hover      { color: var(--text); }
+.tab-btn--active    { background: var(--bg-active); color: var(--text-accent); }
+
+/* Contenedor de vista (waveform o helicorder) */
+.charts-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.charts-view--hidden { display: none; }
+
+/* Cada sección de gráfica */
+.chart-box {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.chart-box:last-child { border-bottom: none; }
+.chart-box--full      { flex: 1; }
+
+/* El sismograma ocupa algo más de espacio que el espectrograma */
+.chart-box:first-child { flex: 5; }
+.chart-box:last-child  { flex: 4; }
+
+/* Etiqueta superpuesta en la esquina de la gráfica */
+.chart-label {
+    position: absolute;
+    top: 8px;
+    left: calc(var(--margin-left) + 8px);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    z-index: 5;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+}
+
+/* Ajustes de seisplotjs — NO tocar sin revisar spectrogram.js */
+#waveform {
+    width: calc(100% - 35px) !important;
+    padding-left: 20px;
+    padding-right: 15px;
+    height: 100%;
+}
+
+#spectrogram-canvas {
+    display: block;
+    position: relative;
+    left: 50px;
+    top: 15px;
+    width: calc(100% - 45px) !important;
+    height: calc(100% - 20px);
+    image-rendering: auto;
+}
+
+/* Mensaje de placeholder para vistas no implementadas */
+.placeholder-msg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+/* ═══════════════════════════════════════════════
+   COLUMNA DERECHA — Paneles de control
+═══════════════════════════════════════════════ */
+
+.col-controls {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+/* Panel genérico (Detalles / Canal / Filtros) */
+.ctrl-panel {
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.panel-body {
+    padding: 9px 10px;
+}
+
+/* ── Detalles de estación ── */
+
+/* Grid de dos columnas: etiqueta izquierda, valor derecha */
+.detail-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.dk {          /* Detail Key — etiqueta */
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.dv {          /* Detail Value — valor */
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 110px;
+}
+
+.mono-small {  /* Para timestamps largos */
+    font-size: 9px;
+}
+
+.detail-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 7px 0;
+}
+
+/* ── Canal activo ── */
+.channel-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.ch-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 7px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.ch-btn:hover      { border-color: var(--accent); color: var(--text); }
+.ch-btn--active    { background: var(--accent-dim); border-color: var(--accent); color: var(--text-accent); }
+
+.hint-text {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    line-height: 1.4;
+}
+
+/* ── Filtros ── */
+.filter-block { margin-bottom: 4px; }
+
+.filter-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+
+/* Fila de inputs numéricos (mín/máx) */
+.filter-inputs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.filter-input-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.filter-input-group label {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.filter-input-group input,
+#fft-window {
+    width: 60px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 3px 5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.12s;
+}
+
+.filter-input-group input:focus,
+#fft-window:focus { border-color: var(--accent); }
+
+/* Botones de acción de filtro */
+.filter-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.filter-apply-btn,
+.filter-clear-btn {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.filter-apply-btn {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--text-accent);
+}
+
+.filter-apply-btn:hover { background: var(--accent); color: #fff; }
+
+.filter-clear-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
+.filter-clear-btn:hover { border-color: var(--text-danger); color: var(--text-danger); }
+
+/* Select de colormap */
+.colormap-select {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 3px 6px;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+}
+
+.colormap-select:focus { border-color: var(--accent); }

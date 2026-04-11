@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeisView | Estación</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/station/station.css">
+</head>
+
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       BARRA DE NAVEGACIÓN SUPERIOR
+       Solo dos vistas: Estación (actual) y Mapa.
+  ═══════════════════════════════════════════ -->
+  <nav class="topnav">
+    <div class="topnav__brand">SEISVIEW</div>
+    <div class="topnav__items">
+      <button class="topnav__item topnav__item--active" data-view="station">Estación</button>
+      <button class="topnav__item" data-view="map">Mapa</button>
+    </div>
+    <div class="topnav__right">
+      <span class="topnav__utc" id="utc-clock">--:--:-- UTC</span>
+      <div class="topnav__status" id="status-indicator">
+        <span class="status-dot"></span>
+        <span id="status-text">CONNECTING</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════
+       LAYOUT PRINCIPAL — 3 columnas
+  ═══════════════════════════════════════════ -->
+  <div class="app-layout">
+
+    <!-- ── COLUMNA IZQUIERDA: Lista de estaciones ── -->
+    <aside class="col-stations">
+      <div class="panel-header">
+        <span class="panel-title">Estaciones</span>
+        <span class="panel-count" id="station-count"></span>
+      </div>
+      <div class="search-box">
+        <input type="text" id="station-search" placeholder="Buscar (ej: OD.ALHM1)…" />
+      </div>
+      <div class="station-list" id="station-list">
+        <div class="station-list__empty">Conectando…</div>
+      </div>
+    </aside>
+
+    <!-- ── COLUMNA CENTRAL: Visualizaciones ── -->
+    <main class="col-charts">
+
+      <div class="charts-header">
+        <h2 class="charts-title" id="title">Cargando…</h2>
+        <div class="tab-switcher">
+          <button class="tab-btn tab-btn--active" id="tab-waveform">Sismograma</button>
+          <button class="tab-btn" id="tab-helicorder">Helicorder</button>
+        </div>
+      </div>
+
+      <!-- Vista Sismograma + Espectrograma -->
+      <div class="charts-view" id="view-waveform">
+        <section class="chart-box">
+          <span class="chart-label">SISMOGRAMA EN TIEMPO REAL</span>
+          <div id="waveform"></div>
+        </section>
+        <section class="chart-box">
+          <span class="chart-label">ANÁLISIS ESPECTRAL (0–50 Hz)</span>
+          <canvas id="spectrogram-canvas"></canvas>
+        </section>
+      </div>
+
+      <!-- Vista Helicorder (oculta por defecto) -->
+      <div class="charts-view charts-view--hidden" id="view-helicorder">
+        <section class="chart-box chart-box--full">
+          <span class="chart-label">HELICORDER — 24h</span>
+          <div class="placeholder-msg">Helicorder — próximamente</div>
+        </section>
+      </div>
+
+    </main>
+
+    <!-- ── COLUMNA DERECHA: Paneles de control ── -->
+    <aside class="col-controls">
+
+      <!-- ─ PANEL 1: Detalles de la estación ─
+           Fase 1 (inmediato): red/estación/canal desde URL params.
+           Fase 2 (async):     lat/lon/elevación/sensor desde FDSN StationXML.
+           Fase 3 (primer pkt): sps/encoding/recordSize desde header MiniSEED.
+           Fase 4 (cada pkt):  latencia/paquetes/última muestra en tiempo real. -->
+      <div class="ctrl-panel">
+        <div class="panel-header"><span class="panel-title">Detalles</span></div>
+        <div class="panel-body">
+
+          <div class="detail-group">
+            <div class="detail-row"><span class="dk">Red</span>       <span class="dv" id="d-net">—</span></div>
+            <div class="detail-row"><span class="dk">Estación</span>  <span class="dv" id="d-sta">—</span></div>
+            <div class="detail-row"><span class="dk">Canal</span>     <span class="dv" id="d-cha">—</span></div>
+            <div class="detail-row"><span class="dk">Ubicación</span> <span class="dv" id="d-loc">—</span></div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Datos geográficos desde FDSN -->
+          <div class="detail-group">
+            <div class="detail-row"><span class="dk">Latitud</span>   <span class="dv" id="d-lat">—</span></div>
+            <div class="detail-row"><span class="dk">Longitud</span>  <span class="dv" id="d-lon">—</span></div>
+            <div class="detail-row"><span class="dk">Elevación</span> <span class="dv" id="d-ele">—</span></div>
+            <div class="detail-row"><span class="dk">Sensor</span>    <span class="dv" id="d-sensor">—</span></div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Datos técnicos desde header MiniSEED -->
+          <div class="detail-group">
+            <div class="detail-row"><span class="dk">Muestras</span>    <span class="dv" id="d-sps">—</span></div>
+            <div class="detail-row"><span class="dk">Encoding</span>    <span class="dv" id="d-enc">—</span></div>
+            <div class="detail-row"><span class="dk">Tamaño rec.</span> <span class="dv" id="d-recsize">—</span></div>
+            <div class="detail-row"><span class="dk">Continuación</span><span class="dv" id="d-contcode">—</span></div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Telemetría en vivo -->
+          <div class="detail-group">
+            <div class="detail-row"><span class="dk">Latencia</span>      <span class="dv" id="d-latency">—</span></div>
+            <div class="detail-row"><span class="dk">Paquetes</span>      <span class="dv" id="d-packets">0</span></div>
+            <div class="detail-row"><span class="dk">Última muestra</span><span class="dv mono-small" id="d-last">—</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─ PANEL 2: Canal activo ─ -->
+      <div class="ctrl-panel">
+        <div class="panel-header"><span class="panel-title">Canal activo</span></div>
+        <div class="panel-body">
+          <div class="channel-grid" id="channel-grid">
+            <button class="ch-btn ch-btn--active" data-channel="HHZ">HHZ</button>
+            <button class="ch-btn" data-channel="HHN">HHN</button>
+            <button class="ch-btn" data-channel="HHE">HHE</button>
+            <button class="ch-btn" data-channel="EHZ">EHZ</button>
+            <button class="ch-btn" data-channel="SHZ">SHZ</button>
+          </div>
+          <p class="hint-text">Selecciona un canal para reconectar.</p>
+        </div>
+      </div>
+
+      <!-- ─ PANEL 3: Filtros personalizados ─ -->
+      <div class="ctrl-panel">
+        <div class="panel-header"><span class="panel-title">Filtros</span></div>
+        <div class="panel-body">
+
+          <!-- Bandpass para el sismograma -->
+          <div class="filter-block">
+            <div class="filter-label">Sismograma — Bandpass (Hz)</div>
+            <div class="filter-inputs">
+              <div class="filter-input-group">
+                <label>Mín</label>
+                <input type="number" id="wave-fmin" placeholder="ej: 1" min="0" step="0.1" />
+              </div>
+              <div class="filter-input-group">
+                <label>Máx</label>
+                <input type="number" id="wave-fmax" placeholder="ej: 10" min="0" step="0.1" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button class="filter-apply-btn" id="wave-filter-apply">Aplicar</button>
+              <button class="filter-clear-btn" id="wave-filter-clear">Limpiar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Rango de frecuencias del espectrograma -->
+          <div class="filter-block">
+            <div class="filter-label">Espectrograma — Rango (Hz)</div>
+            <div class="filter-inputs">
+              <div class="filter-input-group">
+                <label>Mín</label>
+                <input type="number" id="spec-fmin" value="0" min="0" step="1" />
+              </div>
+              <div class="filter-input-group">
+                <label>Máx</label>
+                <input type="number" id="spec-fmax" value="50" min="0" step="1" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button class="filter-apply-btn" id="spec-filter-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Parámetros FFT -->
+          <div class="filter-block">
+            <div class="filter-label">Ventana FFT (muestras)</div>
+            <div class="filter-inputs">
+              <input type="number" id="fft-window" value="256" min="64" max="4096" step="64" />
+              <button class="filter-apply-btn" id="fft-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="filter-block" style="margin-top:8px">
+            <div class="filter-label">Colormap</div>
+            <select id="fft-colormap" class="colormap-select">
+              <option value="inferno" selected>Inferno</option>
+              <option value="magma">Magma</option>
+              <option value="viridis">Viridis</option>
+              <option value="plasma">Plasma</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <script type="module" src="/src/station/station.js"></script>
+</body>
+</html>
