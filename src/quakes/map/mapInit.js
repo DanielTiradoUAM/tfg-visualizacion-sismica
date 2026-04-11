@@ -5,7 +5,7 @@ import * as sp from "../../seisplot/seisplotjs.mjs";
 /**
  * Inicialización del mapa
  */
-export const mymap = document.querySelector("sp-station-quake-map");
+export const mymap = document.querySelectorAll("sp-station-quake-map")[0];
 
 // --- Lógica de Zoom y Mapa (Sincronización robusta) ---
 
@@ -34,14 +34,12 @@ setTimeout(() => {
 }, 200);
 
 // --- Estilos del mapa ---
-
 mymap.addStyle(`
   div.stationMapMarker {
     color: rebeccapurple;
   }
-  path.quakeMapMarker {
-    fill: orange;
-    stroke: yellow;
-    fill-opacity: 0.25;
-  }
+  /* NO pongas color ni fill aquí para path.quakeMapMarker */
+  /* Si lo pones, bloquearás el currentColor de Leaflet */
 `);
+
+
