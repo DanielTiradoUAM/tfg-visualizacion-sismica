@@ -1,24 +1,149 @@
 // src/quakes/seismograms/loadSeismogram.js
 
 import * as sp from "../../seisplot/seisplotjs.mjs";
-import { getDataLink } from "../data/datalinkService.js";
 import { findStreamIds } from "./streamId.js";
-import {
-  showLoading,
-  showError,
-  getSeismogramTarget,
-} from "../ui/seismogramContainer.js";
 
 /**
- * Normaliza un SeismogramDisplayData a [-1, 1]
+ * Ajusta el tiempo absoluto del sismograma
  */
-function normalizeSDD(sdd) {
-  const data = sdd.seismogram.segments[0].y;
-  const max = Math.max(...data.map(Math.abs));
-  if (max === 0) return;
+function applyAbsoluteTime(sdd, quake) {
+  // Usar el tiempo real del terremoto como referencia
+  if (quake && quake.time) {
+    sdd.addQuake(quake);
+  }
+}
 
-  for (let i = 0; i < data.length; i++) {
-    data[i] /= max;
+/**
+ * Crea configuración del seismograph con tiempo real
+ */
+function createSeismographConfig() {
+  const config = new sp.seismographconfig.SeismographConfig();
+
+  config.title = null;
+
+  config.xLabel = "Tiempo (UTC)";
+  config.yLabel = "Velocity (m/s)";
+
+  // Tiempo absoluto
+  config.isRelativeTime = false;
+
+  // Márgenes (un poco más de espacio)
+  config.margin.bottom = 60;
+  
+  // --- INDISPENSABLE PARA VER LAS FASES ---
+  config.doMarkers = true; 
+  config.markerTextOffset = 0.85; // Coloca el texto cerca del tope
+  config.markerFlagpoleBase = "bottom"; // Dibuja la línea de arriba a abajo
+
+  return config;
+}
+
+
+/**
+ * Remueve la respuesta instrumental y limpia la señal
+ * siguiendo el flujo recomendado por Seisplotjs
+ */
+async function removeInstrumentResponseIfPossible(seis, channel) {
+
+  if (!seis || !channel || !channel.response) {
+    console.warn("⚠️ No hay response metadata, no se puede remover respuesta instrumental");
+    return seis;
+  }
+
+  try {
+    // 1️⃣ & 2️⃣ Limpieza básica
+    seis = sp.filter.rMean(seis);
+    seis = sp.filter.removeTrend(seis);
+
+    // 3️⃣ Filtro Butterworth (acorde a Nyquist = 50Hz)
+    // El filtro debe ser siempre menor a 50Hz
+    const butterworth = sp.filter.createButterworth(
+      2, 
+      sp.filter.BAND_PASS,
+      0.5,  // Frecuencia baja de paso (Hz)
+      45,   // Frecuencia alta de paso (Hz) - bien dentro del límite de Nyquist
+      1 / seis.sampleRate
+    );
+
+    seis = sp.filter.applyFilter(butterworth, seis);
+
+    // 4️⃣ Taper para limpiar bordes
+    seis = sp.taper.taper(seis);
+
+    // 5️⃣ Deconvolución con parámetros seguros para 100Hz
+    // f1, f2: inicio de la banda de paso (donde el sensor es estable)
+    // f3, f4: fin de la banda de paso (deben ser < 50Hz)
+    const f1 = 0.5;
+    const f2 = 1.0;
+    const f3 = 40.0;
+    const f4 = 48.0;
+
+    seis = sp.transfer.transfer(
+      seis,
+      channel.response,
+      f1,
+      f2,
+      f3,
+      f4
+    );
+
+    return seis;
+
+  } catch (err) {
+    console.error("❌ Error removiendo respuesta instrumental:", err);
+    return seis;
+  }
+}
+
+async function addPhaseMarkers(sdds, quake, station) {
+
+  if (!quake || !station) return;
+
+  try {
+
+    const daz = sp.distaz.distaz(
+      station.latitude,
+      station.longitude,
+      quake.latitude,
+      quake.longitude
+    );
+
+    const taup = new sp.traveltime.TraveltimeQuery();
+
+    taup.distdeg([daz.distanceDeg]);
+    taup.evdepthInMeter(quake.depth);
+    taup.phases("P,S");
+
+    // IMPORTANTE: usar queryText
+    const text = await taup.queryText();
+
+    // convertir texto TauP a objetos de llegada
+    const arrivals = sp.traveltime.parseTaupText(text);
+
+    if (!arrivals || arrivals.length === 0) return;
+
+    for (const sdd of sdds) {
+
+      const markers = arrivals.map(arr => {
+
+        const phaseTime = quake.time.plus({
+          seconds: arr.time
+        });
+
+        return {
+          name: arr.phase,
+          time: phaseTime,
+          type: "predicted",
+          description: `Predicted ${arr.phase}`
+        };
+
+      });
+
+      sdd.addMarkers(markers);
+    }
+
+  } catch (err) {
+    console.warn("⚠️ No se pudieron calcular fases:", err);
   }
 }
 
@@ -26,133 +151,73 @@ function normalizeSDD(sdd) {
  * Carga y muestra sismogramas multicanal (Z, N, E)
  * solapados para una estación
  */
-export async function loadAndDisplaySeismogram(quake, station) {
+export async function loadAndDisplaySeismogram(quake, station, packetsByChannel) {
+  const target = document.getElementById("seismogramContainer");
+  if (!target) return;
 
-  showLoading(station.stationCode, quake);
-
-  // 🔹 Obtener StreamIds ya priorizados (HH > BH > EH)
   const streams = findStreamIds(station);
-
-  if (streams.length === 0) {
-    showError(
-      station.stationCode,
-      "La estación no tiene canales compatibles (Z, N, E)"
-    );
-    return;
-  }
-
-  const startTime = quake.time.minus({ minutes: 1 });
-  const endTime   = quake.time.plus({ minutes: 10 });
-
   const sdds = [];
 
-  for (const { channelCode, streamId } of streams) {
+  for (const { channelCode } of streams) {
+    const packets = packetsByChannel[channelCode];
 
-    console.log(`📡 Cargando ${station.stationCode} ${channelCode}`);
-
-    const packets = [];
-    const maxPackets = 1500;
-    const maxWaitTime = 20000;
-
-    let dlConn = getDataLink();
-    let timeoutId = null;
-
-    try {
-      await dlConn.connect();
-
-      const matchResponse =
-        await dlConn.awaitDLCommand("MATCH", streamId);
-
-      if (matchResponse.isError()) {
-        console.warn(`❌ MATCH fallido para ${streamId}`);
-        continue;
-      }
-
-      await dlConn.positionAfter(startTime);
-
-      await new Promise((resolve, reject) => {
-
-        dlConn.setOnClose(resolve);
-
-        dlConn.packetHandler = (packet) => {
-          const rec =
-            packet.asMiniseed() || packet.asMiniseed3();
-
-          if (rec) packets.push(rec);
-
-          if (
-            packet.packetTime >= endTime ||
-            packets.length >= maxPackets
-          ) {
-            dlConn.close();
-          }
-        };
-
-        dlConn.stream().catch(reject);
-
-        timeoutId = setTimeout(() => {
-          console.warn(`⏱ Timeout en ${channelCode}`);
-          dlConn.close();
-        }, maxWaitTime);
-      });
-
-      if (packets.length === 0) {
-        console.warn(`⚠️ Sin datos en ${channelCode}`);
-        continue;
-      }
-
-      const merged = sp.miniseed.merge(packets);
-      const seis = new sp.seismogram.Seismogram(merged.segments);
-
-      const sdd =
-        sp.seismogram.SeismogramDisplayData
-          .fromSeismogram(seis);
-
-      // 🔹 Asociar metadata del canal real (si existe)
-      const channel = station.channels.find(
-        c => c.channelCode === channelCode
-      );
-      if (channel) sdd.channel = channel;
-
-      sdd.addQuake(quake);
-
-      // 🔧 Normalización por canal (cuando quieras activarla)
-      // normalizeSDD(sdd);
-
-      sdds.push(sdd);
-
-    } catch (err) {
-      console.warn(
-        `💥 Error en ${station.stationCode} ${channelCode}`,
-        err
-      );
-    } finally {
-      if (dlConn && dlConn.isConnected()) dlConn.close();
-      if (timeoutId) clearTimeout(timeoutId);
+    if (!packets || packets.length === 0) {
+      console.warn(`⚠️ Sin paquetes en ${channelCode}`);
+      continue;
     }
+
+    // Unir segmentos. 'merged' es un array de segmentos
+    const merged = sp.miniseed.merge(packets);
+    // IMPORTANTE: En v3.2.0 se pasa el array de segmentos directamente
+    let seis = new sp.seismogram.Seismogram(merged.segments);
+    
+    // Asociar metadata del canal
+    const channel = station.channels.find(c => c.channelCode === channelCode);
+
+    seis = await removeInstrumentResponseIfPossible(seis, channel);
+
+    let sdd = sp.seismogram.SeismogramDisplayData.fromSeismogram(seis);
+
+    
+
+    // ⏱ aplicar tiempo absoluto
+    applyAbsoluteTime(sdd, quake);
+
+    sdds.push(sdd);
   }
 
   if (sdds.length === 0) {
-    showError(
-      station.stationCode,
-      "No se pudieron cargar datos de los canales"
-    );
+    target.innerHTML = `<div style="color:#ff4444;text-align:center;margin-top:20px;">
+                          ⚠️ No hay datos disponibles para esta estación
+                        </div>`;
     return;
   }
 
-  const target = getSeismogramTarget(station.stationCode);
-  if (!target) return;
+  // Añadir marcadores de llegada P y S
+  await addPhaseMarkers(sdds, quake, station);
 
+  // Configuración y renderizado
   target.innerHTML = "";
+  const config = createSeismographConfig();
+  
+  // Para que todos los canales (Z, N, E) compartan la misma escala Y
+  config.linkedAmplitude = true; 
 
-  const config = new sp.seismographconfig.SeismographConfig();
-  config.title = `Estación ${station.stationCode}`;
-  config.xLabel = "Tiempo (s desde origen)";
-  config.isRelativeTime = true;
+  const seismograph = new sp.seismograph.Seismograph(sdds, config);
 
-  const seismograph =
-    new sp.seismograph.Seismograph(sdds, config);
+  seismograph.style.fill = "white";
+
+  // Estilos
+  seismograph.style.display = "block";
+  seismograph.style.width = "100%";
+  seismograph.style.height = "100%";
+  // Nota: 'fill' en CSS no siempre afecta al texto del SVG, 
+  // pero ayuda con la consistencia del componente.
+  seismograph.style.color = "white"; 
 
   target.appendChild(seismograph);
-}
 
+  // IMPORTANTE: draw() es obligatorio después de añadir al DOM
+  seismograph.draw();
+  seismograph.drawMarkers();
+}
