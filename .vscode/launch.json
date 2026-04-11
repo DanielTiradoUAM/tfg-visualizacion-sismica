@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "type": "chrome",
+            "name": "http://localhost:5173/tfg-visualizacion-sismica/station.html?net=OD&sta=ALHM1&cha=HHZ",
+            "request": "launch",
+            "url": "http://localhost:5173/tfg-visualizacion-sismica/station.html?net=OD&sta=ALHM1&cha=HHZ"
+        }
+    ]
+}

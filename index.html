@@ -1,22 +1,75 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TFG - Visualización Sísmica</title>
+    <meta charset="utf-8" />
+    <title>Visualización Sísmica - TFG Daniel</title>
+
+    <link rel="stylesheet" href="./src/quakes/styles/quakes.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <link rel="icon" type="image/png" href="/favicon.ico" />
   </head>
-  <body>
-    <h1>TFG - Visualización Sísmica</h1>
 
-    <h2>Opciones de Mapa</h2>
+  <body>    
+    <div id="mapContainer">
+      <sp-station-quake-map
+        centerLat="37"
+        centerLon="-4"
+        zoomLevel="5"
+        fitBounds="false"
+        tileUrl="https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}"
+        tileAttribution="Tiles &copy; Esri"
+        maxZoom="12"
+      >
+      </sp-station-quake-map>
     
-    <p>
-      <a href="/src/quakes/quakes.html">Ir al mapa de terremotos (Quakes)</a>
-    </p>
+      <!-- Panel de información del terremoto -->
+      <div id="quakeInfoPanel" class="hidden">
+        <div class="quake-magnitude" id="quakeMagnitude">
+          <!-- Magnitud -->
+        </div>
+        <div class="quake-details" id="quakeDetails">
+          <!-- Líneas de información -->
+        </div>
+      </div>
+    </div>
 
-    <p>
-      <a href="/src/rueda/rueda.html">Ir al mapa de prueba del Zoom (Rueda)</a>
-    </p>
+    <div id="stationInfoPanel">
+
+      <!-- Columna 1 (18%) -->
+      <div id="stationColumn" class="panel-column station-column">
+        <div id="stationName" class="station-name"></div>
+        <div id="stationDetails" class="station-details"></div>
+        <div class="download-container">
+          <button id="btnDownloadMSeed" class="hidden btn-download">
+            Descargar MiniSEED (.mseed)
+          </button>
+        </div>
+      </div>
+    
+      <!-- Columna 2 (70%) -->
+      <div id="seismogramColumn" class="panel-column seismo-column">
+        <div id="seismogramContainer">
+          <!-- Aquí se insertará el sismograma -->
+        </div>
+      </div>
+      
+      <!-- Columna 3 (12%) -->
+      <div id="stationListColumn" class="panel-column station-list-column">
+
+        <div class="station-list-title">
+          Selected Stations
+        </div>
+
+        <div id="selectedStationsList">
+          <!-- Aquí aparecerán las estaciones -->
+        </div>
+
+      </div>
+
+    
+    </div>
+    
 
     <script type="module" src="/src/main.js"></script>
   </body>

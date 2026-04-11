@@ -4,7 +4,6 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: '/tfg-visualizacion-sismica/', 
   
-
   server: {
     proxy: {
       // 1. Proxy para las peticiones FDSN (HTTP/S)
