@@ -1,17 +1,20 @@
-// src/quakes/data/datalinkService.js
-
 import * as sp from "../../seisplot/seisplotjs.mjs";
 
-const DATALINK_HOST = "localhost:5173";
+// IMPORTANTE: Si usas el proxy de Vite, esto está bien. 
+// Si falla, prueba cambiarlo por la IP real del servidor (ej: live.openseismometer.net:18000)
+const DATALINK_URL = `ws://localhost:5173/datalink-ws`;
 
 /**
- * Devuelve una nueva conexión DataLink
- * @returns {sp.datalink.DataLinkConnection}
+ * Crea una conexión DataLink permitiendo inyectar el manejador de paquetes
+ * @param {Function} packetHandler - Función que procesa cada paquete recibido
  */
-export function getDataLink() {
+export function getDataLink(packetHandler) {
   return new sp.datalink.DataLinkConnection(
-    `ws://${DATALINK_HOST}/datalink-ws`,
-    () => {}, // packetHandler obligatorio aunque no se use aquí
+    DATALINK_URL,
+    (packet) => {
+      // Si nos pasan un handler, lo usamos. Si no, no hacemos nada.
+      if (packetHandler) packetHandler(packet);
+    },
     (error) => {
       console.error("❌ DataLink Error:", error);
     }
