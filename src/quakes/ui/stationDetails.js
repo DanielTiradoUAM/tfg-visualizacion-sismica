@@ -1,38 +1,30 @@
 /**
- * Muestra la información detallada de la Estación en el HTML.
- * @param {sp.stationxml.Station | null} station - El objeto estación seleccionado.
+ * Muestra la información detallada de la Estación en el panel overlay.
+ * @param {sp.stationxml.Station | null} station
  */
 export function displayStationDetails(station) {
+
+    const panel = document.getElementById("stationInfoPanel");
+    const nameEl = document.getElementById("stationName");
+    const detailsEl = document.getElementById("stationDetails");
+
     if (!station) {
-        stationDetailsContainer.innerHTML = '<div class="station-card"><h3>Seleccione una Estación en el mapa 👆</h3></div>';
-        document.querySelector("span#stationCode").textContent = "Seleccione una Estación";
+        panel.classList.remove("visible");
         return;
     }
-    
+
+    panel.classList.add("visible");
+
     const code = station.codes();
-    document.querySelector("span#stationCode").textContent = code;
-    
-    stationDetailsContainer.innerHTML = `
-        <div class="station-card">
-            <h2>📡 Detalles de la Estación</h2>
-            <table>
-                <tr>
-                    <th>Código:</th>
-                    <td><strong>${code}</strong></td>
-                </tr>
-                <tr>
-                    <th>Localización:</th>
-                    <td>${station.latitude.toFixed(4)} N, ${station.longitude.toFixed(4)} E</td>
-                </tr>
-                <tr>
-                    <th>Elevación:</th>
-                    <td>${station.elevation.toFixed(1)} m</td>
-                </tr>
-                <tr>
-                    <th>Canales:</th>
-                    <td>${station.channels ? station.channels.length : 0} disponibles</td>
-                </tr>
-            </table>
-        </div>
+
+    nameEl.textContent = code;
+
+    detailsEl.innerHTML = `
+        <div><strong>Latitud:</strong> ${station.latitude.toFixed(4)}°</div>
+        <div><strong>Longitud:</strong> ${station.longitude.toFixed(4)}°</div>
+        <div><strong>Elevación:</strong> ${station.elevation.toFixed(1)} m</div>
+        <div><strong>Canales disponibles:</strong> ${
+            station.channels ? station.channels.length : 0
+        }</div>
     `;
-  }
+}
