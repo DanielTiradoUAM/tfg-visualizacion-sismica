@@ -27,7 +27,7 @@ export function setCurrentQuake(quake) {
  */
 export function toggleStation(station) {
   const index = CURRENT_STATIONS.findIndex(
-    (s) => s.code === station.code
+    (s) => s.codes() === station.codes()
   );
 
   if (index === -1) {
@@ -39,7 +39,6 @@ export function toggleStation(station) {
 
 /**
  * Limpia todas las estaciones seleccionadas
- * (útil si luego lo necesitas explícitamente)
  */
 export function clearStations() {
   CURRENT_STATIONS = [];
