@@ -2,7 +2,7 @@ import * as sp from "../../seisplot/seisplotjs.mjs";
 
 // IMPORTANTE: Si usas el proxy de Vite, esto está bien. 
 // Si falla, prueba cambiarlo por la IP real del servidor (ej: live.openseismometer.net:18000)
-const DATALINK_URL = `ws://localhost:5173/datalink-ws`;
+export const DATALINK_URL = `ws://localhost:5173/datalink-ws`;
 
 /**
  * Crea una conexión DataLink permitiendo inyectar el manejador de paquetes
