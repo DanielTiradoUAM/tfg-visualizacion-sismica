@@ -6,7 +6,7 @@ import { findStreamIds } from "./streamId.js";
 /**
  * Ajusta el tiempo absoluto del sismograma
  */
-function applyAbsoluteTime(sdd, quake) {
+export function applyAbsoluteTime(sdd, quake) {
   // Usar el tiempo real del terremoto como referencia
   if (quake && quake.time) {
     sdd.addQuake(quake);
@@ -16,7 +16,7 @@ function applyAbsoluteTime(sdd, quake) {
 /**
  * Crea configuración del seismograph con tiempo real
  */
-function createSeismographConfig() {
+export function createSeismographConfig() {
   const config = new sp.seismographconfig.SeismographConfig();
 
   config.title = null;
@@ -43,7 +43,7 @@ function createSeismographConfig() {
  * Remueve la respuesta instrumental y limpia la señal
  * siguiendo el flujo recomendado por Seisplotjs
  */
-async function removeInstrumentResponseIfPossible(seis, channel) {
+export async function removeInstrumentResponseIfPossible(seis, channel) {
 
   if (!seis || !channel || !channel.response) {
     console.warn("⚠️ No hay response metadata, no se puede remover respuesta instrumental");
@@ -60,7 +60,7 @@ async function removeInstrumentResponseIfPossible(seis, channel) {
     const butterworth = sp.filter.createButterworth(
       2, 
       sp.filter.BAND_PASS,
-      0.5,  // Frecuencia baja de paso (Hz)
+      1.5,  // Frecuencia baja de paso (Hz)
       45,   // Frecuencia alta de paso (Hz) - bien dentro del límite de Nyquist
       1 / seis.sampleRate
     );
@@ -75,8 +75,8 @@ async function removeInstrumentResponseIfPossible(seis, channel) {
     // f3, f4: fin de la banda de paso (deben ser < 50Hz)
     const f1 = 0.5;
     const f2 = 1.0;
-    const f3 = 40.0;
-    const f4 = 48.0;
+    const f3 = 35.0;
+    const f4 = 45.0;
 
     seis = sp.transfer.transfer(
       seis,
@@ -95,7 +95,7 @@ async function removeInstrumentResponseIfPossible(seis, channel) {
   }
 }
 
-async function addPhaseMarkers(sdds, quake, station) {
+export async function addPhaseMarkers(sdds, quake, station) {
 
   if (!quake || !station) return;
 
@@ -147,14 +147,7 @@ async function addPhaseMarkers(sdds, quake, station) {
   }
 }
 
-/**
- * Carga y muestra sismogramas multicanal (Z, N, E)
- * solapados para una estación
- */
-export async function loadAndDisplaySeismogram(quake, station, packetsByChannel) {
-  const target = document.getElementById("seismogramContainer");
-  if (!target) return;
-
+export async function buildProcessedSeismogramData(quake, station, packetsByChannel) {
   const streams = findStreamIds(station);
   const sdds = [];
 
@@ -166,25 +159,32 @@ export async function loadAndDisplaySeismogram(quake, station, packetsByChannel)
       continue;
     }
 
-    // Unir segmentos. 'merged' es un array de segmentos
     const merged = sp.miniseed.merge(packets);
-    // IMPORTANTE: En v3.2.0 se pasa el array de segmentos directamente
     let seis = new sp.seismogram.Seismogram(merged.segments);
-    
-    // Asociar metadata del canal
     const channel = station.channels.find(c => c.channelCode === channelCode);
 
     seis = await removeInstrumentResponseIfPossible(seis, channel);
 
-    let sdd = sp.seismogram.SeismogramDisplayData.fromSeismogram(seis);
-
-    
-
-    // ⏱ aplicar tiempo absoluto
+    const sdd = sp.seismogram.SeismogramDisplayData.fromSeismogram(seis);
     applyAbsoluteTime(sdd, quake);
-
     sdds.push(sdd);
   }
+
+  if (sdds.length > 0) {
+    await addPhaseMarkers(sdds, quake, station);
+  }
+
+  return sdds;
+}
+
+/**
+ * Carga y muestra sismogramas multicanal (Z, N, E)
+ * solapados para una estación
+ */
+export async function loadAndDisplaySeismogram(quake, station, packetsByChannel) {
+  const target = document.getElementById("seismogramContainer");
+  if (!target) return;
+  const sdds = await buildProcessedSeismogramData(quake, station, packetsByChannel);
 
   if (sdds.length === 0) {
     target.innerHTML = `<div style="color:#ff4444;text-align:center;margin-top:20px;">
@@ -192,9 +192,6 @@ export async function loadAndDisplaySeismogram(quake, station, packetsByChannel)
                         </div>`;
     return;
   }
-
-  // Añadir marcadores de llegada P y S
-  await addPhaseMarkers(sdds, quake, station);
 
   // Configuración y renderizado
   target.innerHTML = "";
