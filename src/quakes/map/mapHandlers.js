@@ -10,14 +10,14 @@ import {
 
 import { displayQuakeDetails } from "../ui/quakeDetails.js";
 import { displayStationDetails } from "../ui/stationDetails.js";
-import { loadAndDisplaySeismogram } from "../seismograms/loadSeismogram.js";
-import { fetchStationWaveformPackets } from "../data/waveformPackets.js";
-import { exportToMSeed } from "../data/mseedDownload.js";
+import {
+  createStationUrl,
+  encodeEventPayload,
+  getPreferredStationChannel,
+  persistLastStationSelection,
+} from "../../shared/navigation.js";
 
 let rayLines = new Map();        // <stationCode, leafletLine>
-let waveformCache = new Map(); // key: quakeId_stationCode -> packets
-
-let lastDownloadedData = null;
 let lastSelectedStation = null;
 let lastStationHighlighted = null;
 
@@ -209,22 +209,28 @@ export function registerMapHandlers(map) {
 
   if (!map) return;
 
-  const downloadBtn = document.getElementById("btnDownloadMSeed");
+  const openStationBtn = document.getElementById("btnOpenStationView");
 
-  if (downloadBtn) {
-    downloadBtn.addEventListener("click", () => {
-      if (lastDownloadedData && lastSelectedStation) {
-        exportToMSeed(lastDownloadedData, lastSelectedStation);
-      }
-    });
+  function openStationInTab(station) {
+    const selection = {
+      net: station.networkCode?.trim(),
+      sta: station.stationCode?.trim(),
+      cha: getPreferredStationChannel(station),
+      mode: CURRENT_QUAKE ? "event" : "live",
+      eventPayload: CURRENT_QUAKE ? encodeEventPayload(CURRENT_QUAKE) : null,
+    };
+
+    persistLastStationSelection(selection);
+    window.open(createStationUrl(selection).toString(), "_blank", "noopener");
   }
 
+  openStationBtn?.addEventListener("click", () => {
+    if (lastSelectedStation) {
+      openStationInTab(lastSelectedStation);
+    }
+  });
+
   map.addEventListener("stationclick", async (ce) => {
-
-    if (!CURRENT_QUAKE) {
-      return; 
-    }    
-
     const station = ce.detail.station;
     const fromList = ce.detail.fromList;
 
@@ -255,51 +261,24 @@ export function registerMapHandlers(map) {
     renderStations(map);
   
     displayStationDetails(station);
-  
-    downloadBtn?.classList.add("hidden");
-  
-    if (!CURRENT_QUAKE) return;
-  
+    lastSelectedStation = station;
+
     const target = document.getElementById("seismogramContainer");
-  
     if (target) {
+      const modeLabel = CURRENT_QUAKE ? "evento seleccionado" : "monitorización en vivo";
       target.innerHTML = `
-        <div style="color: white; text-align: center; margin-top: 20px;">
-          Descargando datos de ${station.codes()}...
+        <div style="color: var(--text-muted, #d8dce8); text-align: left; width: 100%; padding-right: 16px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-bottom: 10px; color: #d8dce8;">
+            ${station.codes()}
+          </div>
+          <div style="font-size: 14px; line-height: 1.6; color: #aab1c8;">
+            Se ha preparado esta estación para ${modeLabel}. Ábrela en una nueva pestaña para ver el detalle completo y seleccionar canal.
+          </div>
         </div>`;
     }
-  
-    const cacheKey = `${CURRENT_QUAKE.id}_${station.codes()}`;
-    let packetsByChannel;
 
-    if (waveformCache.has(cacheKey)) {
-
-      // usar datos cacheados
-      packetsByChannel = waveformCache.get(cacheKey);
-
-    } else {
-
-      // descargar
-      packetsByChannel = await fetchStationWaveformPackets(
-        CURRENT_QUAKE,
-        station
-      );
-
-      waveformCache.set(cacheKey, packetsByChannel);
-    }
-  
-    lastDownloadedData = packetsByChannel;
-    lastSelectedStation = station;
-  
-    loadAndDisplaySeismogram(
-      CURRENT_QUAKE,
-      station,
-      packetsByChannel
-    );
-  
-    if (Object.keys(packetsByChannel).length > 0) {
-      downloadBtn?.classList.remove("hidden");
-    }
+    openStationBtn?.classList.remove("hidden");
+    openStationInTab(station);
   
   });
 
@@ -344,7 +323,6 @@ export function registerMapHandlers(map) {
     }
   
     setCurrentQuake(quake);
-    waveformCache.clear();
     
     map.colorClass(
       sp.leafletutil.cssClassForQuake(CURRENT_QUAKE),
