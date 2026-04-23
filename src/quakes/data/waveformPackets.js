@@ -1,5 +1,5 @@
 import { getDataLink } from "./datalinkService.js";
-import { findStreamIds } from "../seismograms/streamId.js";
+import { findStreamIdByChannel, findStreamIds } from "../seismograms/streamId.js";
 
 
 /**
@@ -107,3 +107,21 @@ export async function fetchStationWaveformPackets(
   
     return packetsByChannel;
   }
+
+export async function fetchStationChannelWaveformPackets(quake, station, channelCode) {
+  const startTime = quake.time.minus({ minutes: 1 });
+  const endTime = quake.time.plus({ minutes: 10 });
+  const stream = findStreamIdByChannel(station, channelCode);
+
+  if (!stream) {
+    return {};
+  }
+
+  return {
+    [stream.channelCode]: await fetchWaveformPackets({
+      streamId: stream.streamId,
+      startTime,
+      endTime,
+    }),
+  };
+}
