@@ -67,3 +67,24 @@ export function findStreamIds(station) {
 
   return results;
 }
+
+export function findStreamIdByChannel(station, targetChannelCode) {
+  const channelCode = targetChannelCode?.trim().toUpperCase();
+  if (!channelCode || !station?.channels?.length) return null;
+
+  const channel = station.channels.find(item =>
+    item.channelCode?.trim().toUpperCase() === channelCode
+  );
+
+  if (!channel) return null;
+
+  const net = station.networkCode.trim();
+  const sta = station.stationCode.trim();
+  const loc = (channel.locationCode || "").trim();
+  const [c1, c2, c3] = channelCode.split("");
+
+  return {
+    channelCode,
+    streamId: `FDSN:${net}_${sta}_${loc}_${c1}_${c2}_${c3}/MSEED`,
+  };
+}
