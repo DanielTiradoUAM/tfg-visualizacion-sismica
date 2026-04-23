@@ -19,6 +19,12 @@ export function displayStationDetails(station) {
 
     nameEl.textContent = code;
 
+    const channels = (station.channels ?? [])
+        .map(channel => channel.channelCode?.trim().toUpperCase())
+        .filter(Boolean);
+
+    const preview = channels.slice(0, 6).join(", ") || "—";
+
     detailsEl.innerHTML = `
         <div><strong>Latitud:</strong> ${station.latitude.toFixed(4)}°</div>
         <div><strong>Longitud:</strong> ${station.longitude.toFixed(4)}°</div>
@@ -26,5 +32,6 @@ export function displayStationDetails(station) {
         <div><strong>Canales disponibles:</strong> ${
             station.channels ? station.channels.length : 0
         }</div>
+        <div><strong>Vista rápida:</strong> ${preview}</div>
     `;
 }
