@@ -1,552 +1,660 @@
 /**
  * station.js — Módulo principal de la vista de estación.
- *
- * Flujo de relleno del panel "Detalles":
- *  - Inmediato:      red, estación, canal → desde URL params
- *  - Async (FDSN):   lat, lon, elevación, sensor, ubicación → queryStations()
- *  - 1er paquete:    sps, encoding, tamaño rec., continuación → header MiniSEED
- *  - Cada paquete:   latencia, paquetes, última muestra → calculado en vivo
  */
 
 import * as sp from "../seisplot/seisplotjs.mjs";
 import { getDataLink } from "../quakes/data/datalinkService.js";
 import { queryStations } from "../quakes/data/fdsnQueries.js";
-import { initWaveform, pushPacketToWaveform } from './waveform.js';
-import { initSpectrogram, pushPacketToSpectrogram } from './spectrogram.js';
+import { fetchStationChannelWaveformPackets } from "../quakes/data/waveformPackets.js";
+import { initWaveform, pushPacketToWaveform } from "./waveform.js";
+import { initSpectrogram, pushPacketToSpectrogram } from "./spectrogram.js";
+import { renderEventSummary } from "./eventSummary.js";
+import {
+  initHelicorder,
+  ingestHelicorderPacket,
+  activateHelicorderView,
+  deactivateHelicorderView,
+  destroyHelicorder,
+} from "./helicorder.js";
+import {
+  createMapUrl,
+  createStationUrl,
+  decodeEventPayload,
+  getPreferredStationChannel,
+  persistLastStationSelection,
+} from "../shared/navigation.js";
 
-/* ══════════════════════════════════════════
-   1. PARÁMETROS DE URL
-══════════════════════════════════════════ */
-const params  = new URLSearchParams(window.location.search);
+const params = new URLSearchParams(window.location.search);
 const NETWORK = params.get("net") || "OD";
 const STATION = params.get("sta") || "UAM";
-const CHANNEL = params.get("cha") || "HHZ";
+let CHANNEL = params.get("cha") || "HHZ";
+const MODE = params.get("mode") || "live";
+const RAW_EVENT_PAYLOAD = params.get("event") || "";
+const EVENT_PAYLOAD = decodeEventPayload(RAW_EVENT_PAYLOAD);
+const VIEW_MODE = MODE === "event" && EVENT_PAYLOAD ? "event" : "live";
 
-/* ══════════════════════════════════════════
-   2. ESTADO
-══════════════════════════════════════════ */
-let packetCount       = 0;
-let firstPacketDone   = false;  // Guard: detalles técnicos solo se leen una vez
-let firstPacketLogged = false;  // Guard: console.dir solo la primera vez
-let STATION_REGISTRY  = [];
+const LIVE_THRESHOLD_MS = 10 * 60 * 1000;
 
-/* ══════════════════════════════════════════
-   3. RELOJ UTC
-══════════════════════════════════════════ */
+let packetCount = 0;
+let STATION_LIST = [];
+let ACTIVE_STATION = null;
+let _streamIsLive = false;
+let _helicorderState = "inactive";
+let _helicorderProgressLabel = "CARGANDO";
+
+const eventPacketCache = new Map();
+
 const clockEl = document.getElementById("utc-clock");
+const statusEl = document.getElementById("status-indicator");
+const statusText = document.getElementById("status-text");
+const modeBadgeEl = document.getElementById("view-mode-badge");
+const eventTitleEl = document.getElementById("event-title");
+
+const viewLiveEl = document.getElementById("view-live");
+const viewHeliEl = document.getElementById("view-helicorder");
+const viewEventEl = document.getElementById("view-event");
+const btnViewLive = document.getElementById("btn-view-live");
+const btnViewHeli = document.getElementById("btn-view-heli");
+const panelSpec = document.getElementById("panel-spectrogram");
+const panelHeli = document.getElementById("panel-helicorder");
+const eventBlockEl = document.getElementById("event-detail-block");
+const eventEmptyStateEl = document.getElementById("event-empty-state");
+const eventSummaryContentEl = document.getElementById("event-summary-content");
+const channelSelectEl = document.getElementById("channel-select");
+const telemetryRows = [
+  document.getElementById("telemetry-latency-row"),
+  document.getElementById("telemetry-packets-row"),
+  document.getElementById("telemetry-last-row"),
+];
+
+function isEventMode() {
+  return VIEW_MODE === "event";
+}
+
 function tickClock() {
-    const now = new Date();
-    const pad = n => n.toString().padStart(2, '0');
-    clockEl.textContent =
-        `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
+  if (!clockEl) return;
+
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  clockEl.textContent =
+    `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())} UTC`;
 }
 setInterval(tickClock, 1000);
 tickClock();
 
-/* ══════════════════════════════════════════
-   4. ESTADO DE CONEXIÓN
-══════════════════════════════════════════ */
-const statusEl   = document.getElementById("status-indicator");
-const statusText = document.getElementById("status-text");
+function setStatus(state, label) {
+  if (!statusEl || !statusText) return;
 
-function setStatus(state) {
-    statusEl.classList.remove('is-live', 'is-error');
-    if (state === 'live') {
-        statusEl.classList.add('is-live');
-        statusText.textContent = 'LIVE';
-    } else if (state === 'error') {
-        statusEl.classList.add('is-error');
-        statusText.textContent = 'ERROR';
-    } else {
-        statusText.textContent = 'CONNECTING';
-    }
+  statusEl.classList.remove(
+    "topnav__status--live",
+    "topnav__status--error",
+    "topnav__status--loading"
+  );
+
+  switch (state) {
+    case "live":
+      statusEl.classList.add("topnav__status--live");
+      statusText.textContent = "LIVE";
+      break;
+    case "error":
+      statusEl.classList.add("topnav__status--error");
+      statusText.textContent = "ERROR";
+      break;
+    case "loading":
+      statusEl.classList.add("topnav__status--loading");
+      statusText.textContent = label ?? "CARGANDO";
+      break;
+    default:
+      statusText.textContent = label ?? "CONNECTING";
+  }
 }
 
-/* ══════════════════════════════════════════
-   5. HELPER: escribir en el panel de detalles
-   Centraliza el acceso al DOM para evitar
-   repetir getElementById en cada función.
-══════════════════════════════════════════ */
 function setDetail(id, value) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value ?? '—';
+  const el = document.getElementById(id);
+  if (el) el.textContent = value ?? "—";
 }
 
-/* ══════════════════════════════════════════
-   6. DETALLES ESTÁTICOS (URL params)
-   Se ejecuta inmediatamente, sin esperar nada.
-══════════════════════════════════════════ */
+function persistCurrentStation() {
+  persistLastStationSelection({
+    net: NETWORK,
+    sta: STATION,
+    cha: CHANNEL,
+  });
+}
+
+function currentStationUrl(overrides = {}) {
+  return createStationUrl({
+    net: overrides.net || NETWORK,
+    sta: overrides.sta || STATION,
+    cha: overrides.cha || CHANNEL,
+    mode: overrides.mode || VIEW_MODE,
+    eventPayload: overrides.eventPayload ?? (isEventMode() ? RAW_EVENT_PAYLOAD : null),
+  });
+}
+
+function navigateToStation(overrides = {}) {
+  window.location.href = currentStationUrl(overrides).toString();
+}
+
+function initTopNav() {
+  document.getElementById("nav-to-map")?.addEventListener("click", () => {
+    window.location.href = createMapUrl().toString();
+  });
+
+  document.getElementById("nav-to-station")?.addEventListener("click", () => {
+    persistCurrentStation();
+    window.location.href = currentStationUrl().toString();
+  });
+}
+
+function isHelicorderViewActive() {
+  return !panelHeli?.classList.contains("view--hidden");
+}
+
+function refreshStatus() {
+  if (isEventMode()) {
+    setStatus("loading", "EVENT");
+    return;
+  }
+
+  const heliVisible = isHelicorderViewActive();
+  const heliBusy = _helicorderState === "warming" || _helicorderState === "catching_up";
+
+  if (heliVisible && heliBusy) {
+    setStatus("loading", _helicorderProgressLabel);
+    return;
+  }
+
+  if (_streamIsLive) {
+    setStatus("live");
+    return;
+  }
+
+  setStatus("loading", "CARGANDO");
+}
+
+function formatEventHeadline() {
+  if (!EVENT_PAYLOAD) return "";
+
+  const mag = EVENT_PAYLOAD.magnitude != null
+    ? `M${Number(EVENT_PAYLOAD.magnitude).toFixed(1)}`
+    : "Evento";
+  const type = EVENT_PAYLOAD.magnitudeType ? ` ${EVENT_PAYLOAD.magnitudeType}` : "";
+  const time = EVENT_PAYLOAD.time?.toFormat?.("yyyy-MM-dd HH:mm:ss 'UTC'") || "";
+  return `${mag}${type} · ${time}`;
+}
+
 function fillStaticDetails() {
-    document.getElementById("title").textContent = `${NETWORK}.${STATION} — ${CHANNEL}`;
-    setDetail('d-net', NETWORK);
-    setDetail('d-sta', STATION);
-    setDetail('d-cha', CHANNEL);
+  document.getElementById("title").textContent = `${NETWORK}.${STATION} — ${CHANNEL}`;
+  setDetail("d-net", NETWORK);
+  setDetail("d-sta", STATION);
+  setDetail("d-cha", CHANNEL);
+  setDetail("d-mode", isEventMode() ? "EVENT" : "LIVE");
 
-    // Marcar el canal activo en los botones por defecto del HTML
-    document.querySelectorAll('.ch-btn').forEach(btn => {
-        btn.classList.toggle('ch-btn--active', btn.dataset.channel === CHANNEL);
+  if (modeBadgeEl) {
+    modeBadgeEl.textContent = isEventMode() ? "EVENT" : "LIVE";
+  }
+
+  if (eventTitleEl) {
+    eventTitleEl.textContent = isEventMode()
+      ? `${EVENT_PAYLOAD.description || "Evento seleccionado"} · ${formatEventHeadline()}`
+      : "";
+  }
+}
+
+function getSelectableChannels(station) {
+  const channels = [...new Set(
+    (station?.channels ?? [])
+      .map(channel => channel.channelCode?.trim().toUpperCase())
+      .filter(Boolean)
+  )];
+
+  channels.sort((left, right) => {
+    const order = ["HH", "BH", "EH"];
+    const leftPrefix = order.indexOf(left.slice(0, 2));
+    const rightPrefix = order.indexOf(right.slice(0, 2));
+    const leftWeight = leftPrefix === -1 ? 99 : leftPrefix;
+    const rightWeight = rightPrefix === -1 ? 99 : rightPrefix;
+
+    if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+
+    const orientationOrder = ["Z", "N", "E"];
+    return orientationOrder.indexOf(left[2]) - orientationOrder.indexOf(right[2]);
+  });
+
+  return channels;
+}
+
+function renderChannelSelector() {
+  if (!channelSelectEl || !ACTIVE_STATION) return;
+
+  const channels = getSelectableChannels(ACTIVE_STATION);
+  channelSelectEl.innerHTML = "";
+
+  for (const channelCode of channels) {
+    const option = document.createElement("option");
+    option.value = channelCode;
+    option.textContent = channelCode;
+    option.selected = channelCode === CHANNEL;
+    channelSelectEl.appendChild(option);
+  }
+
+  setDetail("d-chan-count", `${channels.length}`);
+}
+
+function updateEventDetails() {
+  if (!isEventMode() || !EVENT_PAYLOAD || !ACTIVE_STATION) return;
+
+  const mag = EVENT_PAYLOAD.magnitude != null
+    ? `M${Number(EVENT_PAYLOAD.magnitude).toFixed(1)} ${EVENT_PAYLOAD.magnitudeType || ""}`.trim()
+    : EVENT_PAYLOAD.description || "Evento";
+
+  setDetail("d-event-mag", mag);
+  setDetail("d-event-time", EVENT_PAYLOAD.time?.toFormat?.("HH:mm:ss 'UTC'") || "—");
+  setDetail("d-event-depth", EVENT_PAYLOAD.depth != null ? `${Number(EVENT_PAYLOAD.depth).toFixed(1)} km` : "—");
+
+  if (EVENT_PAYLOAD.latitude != null && EVENT_PAYLOAD.longitude != null) {
+    const dist = sp.distaz.distaz(
+      ACTIVE_STATION.latitude,
+      ACTIVE_STATION.longitude,
+      EVENT_PAYLOAD.latitude,
+      EVENT_PAYLOAD.longitude
+    );
+    setDetail("d-event-dist", `${dist.distanceDeg.toFixed(2)}°`);
+  } else {
+    setDetail("d-event-dist", "—");
+  }
+}
+
+function renderStationList(query = "") {
+  const listEl = document.getElementById("station-list");
+  listEl.innerHTML = "";
+
+  const q = query.toLowerCase().replace(/[\s.]/g, "");
+  const filtered = STATION_LIST.filter(station => {
+    if (!q) return true;
+    return `${station.net}${station.sta}`.toLowerCase().includes(q)
+      || station.sta.toLowerCase().includes(q)
+      || station.net.toLowerCase().includes(q);
+  });
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="station-list__empty">Sin resultados.</div>';
+    return;
+  }
+
+  for (const station of filtered) {
+    const item = document.createElement("div");
+    item.className = "station-item";
+    if (station.net === NETWORK && station.sta === STATION) item.classList.add("station-item--active");
+
+    const dot = document.createElement("span");
+    dot.className = "station-item__dot station-item__dot--online";
+
+    const name = document.createElement("span");
+    name.textContent = `${station.net}.${station.sta}`;
+
+    item.append(dot, name);
+    item.addEventListener("click", () => {
+      navigateToStation({
+        net: station.net,
+        sta: station.sta,
+      });
     });
+
+    listEl.appendChild(item);
+  }
 }
 
-/* ══════════════════════════════════════════
-   7. LISTA DE ESTACIONES + DETALLES FDSN
-
-   queryStations() de fdsnQueries.js devuelve un array de objetos Network.
-   Cada Network tiene:
-     network.networkCode  → "OD"
-     network.stations[]   → array de Station, cada uno con:
-       station.stationCode      → "ALHM0"
-       station.latitude         → número
-       station.longitude        → número
-       station.elevation        → número
-       station.channels[]       → array de Channel, cada uno con:
-         channel.channelCode    → "HHZ"
-         channel.locationCode   → "" | "00" | etc.
-         channel.sensor         → objeto con .description
-         channel.sampleRate     → número (también lo tenemos en MiniSEED)
-
-   Hacemos UNA sola llamada a queryStations() y la reutilizamos para:
-     a) Poblar la lista de estaciones del panel izquierdo.
-     b) Rellenar los datos geográficos/sensor de la estación activa.
-     c) Actualizar los botones de canal con los canales reales.
-══════════════════════════════════════════ */
 async function loadFDSNData() {
-    // Mostrar estado de carga en la lista
-    const listEl = document.getElementById('station-list');
-    listEl.innerHTML = '<div class="station-list__empty">Cargando estaciones…</div>';
+  const listEl = document.getElementById("station-list");
+  listEl.innerHTML = '<div class="station-list__empty">Cargando estaciones…</div>';
 
-    let networks;
-    try {
-        networks = await queryStations();
-    } catch (err) {
-        console.warn("[FDSN] Error al consultar estaciones:", err.message);
-        listEl.innerHTML = '<div class="station-list__empty">Error al cargar estaciones.</div>';
-        return;
+  let networks;
+  try {
+    networks = await queryStations();
+  } catch (error) {
+    console.warn("[FDSN] Error:", error.message);
+    listEl.innerHTML = '<div class="station-list__empty">Error al cargar estaciones.</div>';
+    return false;
+  }
+
+  if (!networks?.length) {
+    listEl.innerHTML = '<div class="station-list__empty">No se encontraron estaciones.</div>';
+    return false;
+  }
+
+  STATION_LIST = [];
+  for (const network of networks) {
+    const netCode = network.networkCode?.trim();
+    if (!netCode) continue;
+
+    for (const station of network.stations ?? []) {
+      const staCode = station.stationCode?.trim();
+      if (!staCode) continue;
+      STATION_LIST.push({ net: netCode, sta: staCode });
     }
+  }
 
-    if (!networks?.length) {
-        listEl.innerHTML = '<div class="station-list__empty">No se encontraron estaciones.</div>';
-        return;
-    }
+  renderStationList(document.getElementById("station-search")?.value ?? "");
 
-    // ── a) Construir STATION_REGISTRY ──
-    // Aplanamos networks → stations en una lista plana de { net, sta, status }
-    STATION_REGISTRY = [];
-    for (const network of networks) {
-        const netCode = network.networkCode?.trim();
-        if (!netCode) continue;
-        for (const station of (network.stations ?? [])) {
-            const staCode = station.stationCode?.trim();
-            if (!staCode) continue;
-            STATION_REGISTRY.push({ net: netCode, sta: staCode, status: 'online' });
-        }
-    }
-    console.log(`[FDSN] ${STATION_REGISTRY.length} estaciones cargadas.`);
-    renderStationList();
+  const activeNetwork = networks.find(network => network.networkCode?.trim() === NETWORK);
+  ACTIVE_STATION = activeNetwork?.stations?.find(station => station.stationCode?.trim() === STATION) || null;
 
-    // ── b) Detalles geográficos de la estación activa ──
-    // Buscamos el objeto Network que coincide con NETWORK
-    const activeNetwork = networks.find(n => n.networkCode?.trim() === NETWORK);
-    if (!activeNetwork) return;
+  if (!ACTIVE_STATION) {
+    listEl.innerHTML = '<div class="station-list__empty">La estación seleccionada no existe.</div>';
+    return false;
+  }
 
-    // Dentro de esa red, buscamos la estación que coincide con STATION
-    const activeStation = activeNetwork.stations?.find(
-        s => s.stationCode?.trim() === STATION
-    );
-    if (!activeStation) return;
+  const availableChannels = getSelectableChannels(ACTIVE_STATION);
+  const fallbackChannel = availableChannels.includes(CHANNEL)
+    ? CHANNEL
+    : (availableChannels[0] || getPreferredStationChannel(ACTIVE_STATION));
 
-    // Rellenar lat / lon / elevación
-    setDetail('d-lat', `${activeStation.latitude.toFixed(4)}°`);
-    setDetail('d-lon', `${activeStation.longitude.toFixed(4)}°`);
-    setDetail('d-ele', `${activeStation.elevation.toFixed(1)} m`);
+  if (fallbackChannel && fallbackChannel !== CHANNEL) {
+    navigateToStation({ cha: fallbackChannel });
+    return false;
+  }
 
-    // ── c) Detalles del canal activo ──
-    // Buscamos el canal que coincide con CHANNEL (insensible a mayúsculas)
-    const activeChannel = activeStation.channels?.find(
-        ch => ch.channelCode?.trim().toUpperCase() === CHANNEL.toUpperCase()
-    );
+  setDetail("d-lat", `${ACTIVE_STATION.latitude.toFixed(4)}°`);
+  setDetail("d-lon", `${ACTIVE_STATION.longitude.toFixed(4)}°`);
+  setDetail("d-ele", `${ACTIVE_STATION.elevation.toFixed(1)} m`);
 
-    if (activeChannel) {
-        // locationCode suele ser "" (vacío) → mostramos "—" para que no quede en blanco
-        const loc = activeChannel.locationCode?.trim();
-        setDetail('d-loc', loc || '—');
-
-        // Nombre del instrumento (ej: "Raspberry Shake 1D", "Güralp CMG-3T")
-        const sensor = activeChannel.sensor?.description?.trim();
-        setDetail('d-sensor', sensor || '—');
-
-        // sampleRate desde FDSN (lo sobreescribirá el MiniSEED, pero por si acaso)
-        if (activeChannel.sampleRate) {
-            setDetail('d-sps', `${activeChannel.sampleRate} sps`);
-        }
-    }
-
-    // Actualizar los botones de canal con los disponibles realmente en esta estación
-    if (activeStation.channels?.length) {
-        updateChannelButtons(activeStation.channels);
-    }
+  renderChannelSelector();
+  updateEventDetails();
+  persistCurrentStation();
+  return true;
 }
 
-/**
- * Reconstruye #channel-grid con los canales reales devueltos por FDSN.
- * Elimina duplicados (puede haber múltiples locationCodes para un mismo chanCode).
- */
-function updateChannelButtons(channels) {
-    const grid = document.getElementById("channel-grid");
-    if (!grid) return;
+function updateLiveTelemetry(packet) {
+  const endMs = Number(packet.hppacketend) / 1000;
+  if (!endMs) return;
 
-    const seen  = new Set();
-    const codes = [];
-    for (const ch of channels) {
-        const code = ch.channelCode?.trim().toUpperCase();
-        if (code && !seen.has(code)) {
-            seen.add(code);
-            codes.push(code);
-        }
-    }
-    if (!codes.length) return;
+  packetCount++;
+  setDetail("d-packets", packetCount);
 
-    grid.innerHTML = '';
-    for (const code of codes) {
-        const btn = document.createElement('button');
-        btn.className = 'ch-btn' + (code === CHANNEL ? ' ch-btn--active' : '');
-        btn.dataset.channel = code;
-        btn.textContent = code;
-        btn.addEventListener('click', () => switchChannel(code));
-        grid.appendChild(btn);
-    }
+  const latencyS = (Date.now() - endMs) / 1000;
+  const latEl = document.getElementById("d-latency");
+  if (latEl) {
+    latEl.textContent = `${latencyS.toFixed(1)} s`;
+    latEl.style.color =
+      latencyS < 3 ? "var(--text-live)" :
+      latencyS < 10 ? "var(--text-warn)" :
+      "var(--text-danger)";
+  }
+
+  const d = new Date(endMs);
+  const pad = n => String(n).padStart(2, "0");
+  setDetail("d-last", `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`);
 }
 
-/* ══════════════════════════════════════════
-   8. DETALLES TÉCNICOS (primer paquete MiniSEED)
+function handlePacket(packet) {
+  const endMs = Number(packet.hppacketend) / 1000;
+  const tenMinAgo = Date.now() - LIVE_THRESHOLD_MS;
+  const isLive = endMs >= tenMinAgo;
 
-   Del log de consola, los campos relevantes del header son:
-     header.sampleRate       → 100        (muestras/s)
-     header.encoding         → 1          (1=INT16, 10=Steim1, 11=Steim2)
-     header.recordSize       → 512        (bytes del registro MiniSEED)
-     header.continuationCode → 32         (32=espacio=registro normal)
-     header.locCode          → ""         (código de ubicación)
-     header.numSamples       → 208        (muestras en este paquete)
-     header.startTime.ts     → timestamp ms UTC del inicio
-     header.endTime.ts       → timestamp ms UTC del final
+  if (isLive && !_streamIsLive) {
+    _streamIsLive = true;
+    refreshStatus();
+    console.log("[Station] ✓ Stream live alcanzado.");
+  }
 
-   IMPORTANTE: esta función tiene el guard `firstPacketDone` para ejecutarse
-   solo una vez. El bug anterior era que `firstPacketDone` se podía activar
-   antes de que los elementos del DOM existieran, porque `main()` llama a
-   `initWaveform` antes de garantizar que el DOM esté pintado. Ahora usamos
-   `setDetail()` que ya comprueba si el elemento existe.
-══════════════════════════════════════════ */
-
-// Tabla de encodings MiniSEED → nombre legible
-const ENCODING_NAMES = {
-    0:  "ASCII",
-    1:  "INT 16-bit",
-    3:  "INT 32-bit",
-    4:  "IEEE Float 32",
-    5:  "IEEE Double 64",
-    10: "Steim-1",
-    11: "Steim-2",
-    19: "Steim-3",
-};
-
-function fillPacketDetails(header) {
-    if (firstPacketDone) return;
-    firstPacketDone = true;
-
-    // sampleRate: también lo da FDSN, pero aquí lo confirmamos desde la señal real
-    setDetail('d-sps', `${header.sampleRate} sps`);
-
-    // Encoding: número → nombre legible (tabla arriba)
-    setDetail('d-enc',
-        ENCODING_NAMES[header.encoding] ?? `Desconocido (${header.encoding})`
-    );
-
-    // Tamaño del registro MiniSEED en bytes
-    setDetail('d-recsize', `${header.recordSize} B`);
-
-    // Código de continuación:
-    //   32 (espacio ASCII) = registro normal
-    //   otros valores indican continuaciones de registros largos
-    const contDesc = header.continuationCode === 32
-        ? 'Normal'
-        : `${header.continuationCode}`;
-    setDetail('d-contcode', contDesc);
-
-    // locationCode desde el header (confirma lo que devolvió FDSN)
-    // Solo lo sobreescribimos si FDSN no lo había rellenado
-    const locEl = document.getElementById('d-loc');
-    if (locEl && locEl.textContent === '—') {
-        setDetail('d-loc', header.locCode?.trim() || '—');
-    }
-}
-
-/* ══════════════════════════════════════════
-   9. TELEMETRÍA EN VIVO (cada paquete)
-
-   - startTime.ts → timestamp en ms del inicio del paquete
-   - endTime.ts   → timestamp en ms del final del paquete
-     (el log muestra que endTime existe en el header como _DateTime con .ts)
-   - Latencia = Date.now() - endTime.ts  (diferencia entre "ahora" y el fin del paquete)
-══════════════════════════════════════════ */
-function updateLiveTelemetry(header) {
-    packetCount++;
-    setDetail('d-packets', packetCount);
-
-    // Preferimos endTime si está disponible (evitamos recalcular)
-    // Fallback: calculamos endTime desde startTime + duración
-    let endMs;
-    if (header.endTime?.ts) {
-        endMs = header.endTime.ts;
-    } else if (header.endTime?.toMillis) {
-        endMs = header.endTime.toMillis();
-    } else {
-        // Fallback: startTime + (numSamples / sampleRate) * 1000
-        const startMs = header.startTime?.ts ?? header.startTime?.toMillis?.() ?? 0;
-        endMs = startMs + (header.numSamples / header.sampleRate) * 1000;
-    }
-
-    // Latencia en segundos (redondeada a 1 decimal)
-    const latencyS = (Date.now() - endMs) / 1000;
-    const latEl    = document.getElementById("d-latency");
-    if (latEl) {
-        latEl.textContent = `${latencyS.toFixed(1)} s`;
-        // Color semafórico: verde < 3s / amarillo < 10s / rojo >= 10s
-        latEl.style.color =
-            latencyS < 3  ? 'var(--text-live)'   :
-            latencyS < 10 ? 'var(--text-warn)'   :
-                            'var(--text-danger)';
-    }
-
-    // Última muestra: hora UTC del fin del paquete
-    const d   = new Date(endMs);
-    const pad = n => n.toString().padStart(2, '0');
-    setDetail('d-last',
-        `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
-    );
-}
-
-/* ══════════════════════════════════════════
-   10. HANDLER CENTRAL DE PAQUETES
-══════════════════════════════════════════ */
-function handleIncomingPacket(packet) {
-    if (!firstPacketLogged) {
-        console.log("📦 [DEBUG] Primer paquete DataLink:");
-        console.dir(packet);
-        firstPacketLogged = true;
-    }
-
-    setStatus('live');
-
-    const header = packet._miniseed?.header;
-    if (header) {
-        fillPacketDetails(header);
-        updateLiveTelemetry(header);
-    }
-
+  if (isLive) {
+    updateLiveTelemetry(packet);
     pushPacketToWaveform(packet);
     pushPacketToSpectrogram(packet);
+  }
+
+  ingestHelicorderPacket(packet);
 }
 
-/* ══════════════════════════════════════════
-   11. LISTA DE ESTACIONES — render y búsqueda
-══════════════════════════════════════════ */
-function renderStationList(filter = '') {
-    const listEl = document.getElementById('station-list');
-    const query  = filter.toLowerCase().trim();
+function setView(view) {
+  if (isEventMode()) {
+    viewLiveEl?.classList.add("view--hidden");
+    viewHeliEl?.classList.add("view--hidden");
+    viewEventEl?.classList.remove("view--hidden");
+    return;
+  }
 
-    // Agrupar por red, aplicando el filtro de búsqueda
-    const grouped = {};
-    for (const s of STATION_REGISTRY) {
-        const fullId = `${s.net}.${s.sta}`;
-        if (query && !fullId.toLowerCase().includes(query)) continue;
-        if (!grouped[s.net]) grouped[s.net] = [];
-        grouped[s.net].push(s);
-    }
+  const isHeli = view === "helicorder";
 
-    // Badge: X online / Y total
-    const onlineCount = STATION_REGISTRY.filter(s => s.status === 'online').length;
-    const countEl = document.getElementById('station-count');
-    if (countEl) countEl.textContent = `${onlineCount}/${STATION_REGISTRY.length}`;
+  viewLiveEl.classList.toggle("view--hidden", isHeli);
+  viewHeliEl.classList.toggle("view--hidden", !isHeli);
+  viewEventEl?.classList.add("view--hidden");
 
-    listEl.innerHTML = '';
+  btnViewLive.classList.toggle("view-toggle__btn--active", !isHeli);
+  btnViewHeli.classList.toggle("view-toggle__btn--active", isHeli);
 
-    if (!Object.keys(grouped).length) {
-        listEl.innerHTML = '<div class="station-list__empty">Sin resultados.</div>';
-        return;
-    }
+  if (panelSpec) panelSpec.classList.toggle("view--hidden", isHeli);
+  if (panelHeli) panelHeli.classList.toggle("view--hidden", !isHeli);
 
-    for (const [net, stations] of Object.entries(grouped)) {
-        const groupLabel = document.createElement('div');
-        groupLabel.className = 'station-group-label';
-        groupLabel.textContent = `Red ${net}`;
-        listEl.appendChild(groupLabel);
+  if (isHeli) {
+    activateHelicorderView();
+  } else {
+    deactivateHelicorderView();
+  }
 
-        for (const s of stations) {
-            const item = document.createElement('div');
-            item.className = 'station-item';
-            if (s.net === NETWORK && s.sta === STATION) item.classList.add('is-active');
+  refreshStatus();
 
-            const dot  = document.createElement('span');
-            dot.className = `stn-dot stn-dot--${s.status}`;
-
-            const name = document.createElement('span');
-            name.textContent = `${s.net}.${s.sta}`;
-
-            item.appendChild(dot);
-            item.appendChild(name);
-            item.addEventListener('click', () => {
-                const url = new URL(window.location.href);
-                url.searchParams.set('net', s.net);
-                url.searchParams.set('sta', s.sta);
-                url.searchParams.set('cha', CHANNEL);
-                window.location.href = url.toString();
-            });
-            listEl.appendChild(item);
-        }
-    }
+  if (!isHeli) {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      window.dispatchEvent(new CustomEvent("seisview:view:live:activated"));
+    });
+  }
 }
 
-document.getElementById('station-search')?.addEventListener('input', e => {
-    renderStationList(e.target.value);
-});
+function applyModeLayout() {
+  const eventMode = isEventMode();
 
-/* ══════════════════════════════════════════
-   12. TABS: Sismograma ↔ Helicorder
-══════════════════════════════════════════ */
-document.getElementById('tab-waveform')?.addEventListener('click', () => {
-    document.getElementById('tab-waveform').classList.add('tab-btn--active');
-    document.getElementById('tab-helicorder').classList.remove('tab-btn--active');
-    document.getElementById('view-waveform').classList.remove('charts-view--hidden');
-    document.getElementById('view-helicorder').classList.add('charts-view--hidden');
-});
-document.getElementById('tab-helicorder')?.addEventListener('click', () => {
-    document.getElementById('tab-helicorder').classList.add('tab-btn--active');
-    document.getElementById('tab-waveform').classList.remove('tab-btn--active');
-    document.getElementById('view-helicorder').classList.remove('charts-view--hidden');
-    document.getElementById('view-waveform').classList.add('charts-view--hidden');
-});
+  viewHeliEl?.classList.add("view--hidden");
+  panelHeli?.classList.add("view--hidden");
 
-/* ══════════════════════════════════════════
-   13. CAMBIO DE CANAL
-══════════════════════════════════════════ */
-function switchChannel(channelCode) {
-    if (channelCode === CHANNEL) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set('net', NETWORK);
-    url.searchParams.set('sta', STATION);
-    url.searchParams.set('cha', channelCode);
-    window.location.href = url.toString();
+  if (eventMode) {
+    btnViewLive.style.display = "none";
+    btnViewHeli.style.display = "none";
+    viewLiveEl.classList.add("view--hidden");
+    viewEventEl.classList.remove("view--hidden");
+    panelSpec.classList.add("view--hidden");
+    panelHeli.classList.add("view--hidden");
+    eventBlockEl.classList.remove("view--hidden");
+    for (const row of telemetryRows) {
+      if (row) row.style.display = "none";
+    }
+  } else {
+    btnViewLive.style.display = "";
+    btnViewHeli.style.display = "";
+    viewEventEl.classList.add("view--hidden");
+    viewLiveEl.classList.remove("view--hidden");
+    panelSpec.classList.remove("view--hidden");
+    eventBlockEl.classList.add("view--hidden");
+    for (const row of telemetryRows) {
+      if (row) row.style.display = "";
+    }
+  }
+
+  refreshStatus();
 }
 
-// Botones por defecto del HTML (se reemplazan cuando FDSN responde)
-document.querySelectorAll('.ch-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchChannel(btn.dataset.channel));
-});
-
-/* ══════════════════════════════════════════
-   14. FILTROS
-   Emiten eventos custom en window para que waveform.js
-   y spectrogram.js los escuchen cuando se implementen.
-
-   Para conectar un filtro en waveform.js:
-     window.addEventListener('seisview:filter:waveform', e => {
-         const { fmin, fmax } = e.detail; // null = sin filtro
-         // aplicar / quitar filtro...
-     });
-══════════════════════════════════════════ */
-function emit(name, detail) {
-    window.dispatchEvent(new CustomEvent(name, { detail }));
-    console.log(`[Filtro] ${name}`, detail);
+function emitSpectrogramEvent(name, detail) {
+  window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
-document.getElementById('wave-filter-apply')?.addEventListener('click', () => {
-    const fmin = parseFloat(document.getElementById('wave-fmin').value);
-    const fmax = parseFloat(document.getElementById('wave-fmax').value);
-    if (isNaN(fmin) || isNaN(fmax) || fmin >= fmax) {
-        console.warn('[Filtro] Bandpass no válido:', fmin, fmax);
-        return;
-    }
-    emit('seisview:filter:waveform', { fmin, fmax });
-});
+function initSpectrogramFilters() {
+  document.getElementById("spec-freq-apply")?.addEventListener("click", () => {
+    const fmin = parseFloat(document.getElementById("spec-fmin").value);
+    const fmax = parseFloat(document.getElementById("spec-fmax").value);
+    if (isNaN(fmin) || isNaN(fmax) || fmin >= fmax) return;
+    emitSpectrogramEvent("seisview:filter:spectrogram:freq", { fmin, fmax });
+  });
 
-document.getElementById('wave-filter-clear')?.addEventListener('click', () => {
-    document.getElementById('wave-fmin').value = '';
-    document.getElementById('wave-fmax').value = '';
-    emit('seisview:filter:waveform', { fmin: null, fmax: null });
-});
+  document.getElementById("spec-db-apply")?.addEventListener("click", () => {
+    const minDb = parseFloat(document.getElementById("spec-dbmin").value);
+    const maxDb = parseFloat(document.getElementById("spec-dbmax").value);
+    if (isNaN(minDb) || isNaN(maxDb) || minDb >= maxDb) return;
+    emitSpectrogramEvent("seisview:filter:spectrogram:db", { minDb, maxDb });
+  });
 
-document.getElementById('spec-filter-apply')?.addEventListener('click', () => {
-    const fmin = parseFloat(document.getElementById('spec-fmin').value);
-    const fmax = parseFloat(document.getElementById('spec-fmax').value);
-    if (isNaN(fmin) || isNaN(fmax) || fmin >= fmax) {
-        console.warn('[Filtro] Rango espectrograma no válido:', fmin, fmax);
-        return;
-    }
-    emit('seisview:filter:spectrogram', { fmin, fmax });
-});
-
-document.getElementById('fft-apply')?.addEventListener('click', () => {
-    const windowSize = parseInt(document.getElementById('fft-window').value, 10);
+  document.getElementById("spec-fft-apply")?.addEventListener("click", () => {
+    const windowSize = parseInt(document.getElementById("spec-fft").value, 10);
     if (!windowSize || windowSize < 64) return;
-    emit('seisview:filter:fft', { windowSize });
-});
+    emitSpectrogramEvent("seisview:filter:spectrogram:fft", { windowSize });
+  });
 
-document.getElementById('fft-colormap')?.addEventListener('change', e => {
-    emit('seisview:filter:colormap', { colormap: e.target.value });
-});
-
-/* ══════════════════════════════════════════
-   15. PATRÓN DATALINK
-   Del log: "FDSN:OD_ALHM0__H_H_Z/MSEED"
-   Formato: FDSN:NET_STA__C1_C2_C3/MSEED
-   donde C1_C2_C3 son las tres letras del canal separadas por '_'
-══════════════════════════════════════════ */
-function buildPattern() {
-    const [c1, c2, c3] = CHANNEL.split('');
-    return `FDSN:${NETWORK}_${STATION}__${c1}_${c2}_${c3}/MSEED`;
+  document.getElementById("spec-colormap")?.addEventListener("change", event => {
+    emitSpectrogramEvent("seisview:filter:spectrogram:colormap", { colormap: event.target.value });
+  });
 }
 
-/* ══════════════════════════════════════════
-   16. MAIN
-══════════════════════════════════════════ */
-async function main() {
-    // Inmediato: lo que sabemos desde la URL
-    fillStaticDetails();
-    setStatus('connecting');
+function emitHelicorderEvent(name, detail) {
+  window.dispatchEvent(new CustomEvent(name, { detail }));
+}
 
-    // Async: datos FDSN (lista + detalles). No bloquea el stream.
-    loadFDSNData().catch(err => {
-        console.warn("[FDSN] Fallo en carga inicial:", err.message);
+function initHelicorderFilters() {
+  document.getElementById("heli-lines-apply")?.addEventListener("click", () => {
+    const lines = parseInt(document.getElementById("heli-lines").value, 10);
+    if (!lines || lines < 4) return;
+    emitHelicorderEvent("seisview:filter:helicorder:lines", { lines });
+  });
+
+  document.getElementById("heli-amp-apply")?.addEventListener("click", () => {
+    const amp = parseFloat(document.getElementById("heli-amp").value);
+    if (isNaN(amp) || amp < 0) return;
+    emitHelicorderEvent("seisview:filter:helicorder:amplitude", { amplitude: amp });
+  });
+
+  document.getElementById("heli-detrend")?.addEventListener("change", event => {
+    emitHelicorderEvent("seisview:filter:helicorder:detrend", { detrend: event.target.checked });
+  });
+}
+
+function buildPattern() {
+  const [c1, c2, c3] = CHANNEL.split("");
+  return `FDSN:${NETWORK}_${STATION}__${c1}_${c2}_${c3}/MSEED`;
+}
+
+async function renderEventMode() {
+  if (!ACTIVE_STATION || !EVENT_PAYLOAD) return;
+
+  if (eventEmptyStateEl) {
+    eventEmptyStateEl.textContent = `Generando hoja resumen para ${CHANNEL}…`;
+  }
+  eventSummaryContentEl.innerHTML = "";
+
+  const cacheKey = `${EVENT_PAYLOAD.id || EVENT_PAYLOAD.time?.toISO?.() || "event"}:${NETWORK}.${STATION}.${CHANNEL}`;
+  let packetsByChannel = eventPacketCache.get(cacheKey);
+
+  if (!packetsByChannel) {
+    packetsByChannel = await fetchStationChannelWaveformPackets(EVENT_PAYLOAD, ACTIVE_STATION, CHANNEL);
+    eventPacketCache.set(cacheKey, packetsByChannel);
+  }
+
+  if (eventEmptyStateEl) {
+    eventEmptyStateEl.style.display = "none";
+  }
+
+  await renderEventSummary({
+    container: eventSummaryContentEl,
+    quake: EVENT_PAYLOAD,
+    station: ACTIVE_STATION,
+    channelCode: CHANNEL,
+    packetsByChannel,
+  });
+}
+
+async function runLiveMode() {
+  setStatus("connecting");
+
+  const loaded = await loadFDSNData();
+  if (!loaded) return;
+
+  fillStaticDetails();
+  initSpectrogramFilters();
+  initHelicorderFilters();
+
+  try {
+    initWaveform("waveform");
+    await initSpectrogram();
+    initHelicorder("helicorder");
+
+    const dl = getDataLink(handlePacket);
+    const pattern = buildPattern();
+
+    await dl.connect();
+    await dl.awaitDLCommand("MATCH", pattern);
+
+    const backTime = sp.luxon.DateTime.utc().minus(sp.luxon.Duration.fromISO("P1D"));
+    await dl.positionAfter(backTime);
+
+    setStatus("loading", "0%");
+    console.log("▶ Stream:", pattern, "| desde", backTime.toFormat("dd/MM HH:mm"), "UTC");
+
+    window.addEventListener("beforeunload", () => {
+      if (dl?.isConnected()) dl.close();
+      destroyHelicorder();
     });
 
-    try {
-        initWaveform("waveform");
-        await initSpectrogram();
+    await dl.stream();
+  } catch (error) {
+    setStatus("error");
+    console.error("Error crítico:", error);
+  }
+}
 
-        console.log("🔌 Conectando a DataLink...");
-        const dl = getDataLink(handleIncomingPacket);
-        await dl.connect();
+async function runEventMode() {
+  setStatus("loading", "EVENT");
+  const loaded = await loadFDSNData();
+  if (!loaded) return;
 
-        const pattern = buildPattern();
-        await dl.awaitDLCommand("MATCH", pattern);
+  fillStaticDetails();
+  await renderEventMode();
+}
 
-        // Cargar los últimos 10 minutos de histórico
-        const backTime = sp.luxon.DateTime.utc().minus(
-            sp.luxon.Duration.fromISO("PT10M")
-        );
-        await dl.positionAfter(backTime);
+function registerUiListeners() {
+  btnViewLive?.addEventListener("click", () => setView("live"));
+  btnViewHeli?.addEventListener("click", () => setView("helicorder"));
 
-        console.log("▶ Streaming:", pattern);
-        await dl.stream();
+  document.getElementById("station-search")?.addEventListener("input", event => {
+    renderStationList(event.target.value);
+  });
 
-        window.addEventListener("beforeunload", () => {
-            if (dl?.isConnected()) dl.close();
-        });
+  channelSelectEl?.addEventListener("change", event => {
+    const nextChannel = event.target.value;
+    if (!nextChannel || nextChannel === CHANNEL) return;
 
-    } catch (error) {
-        setStatus('error');
-        console.error("💥 Error crítico:", error);
+    navigateToStation({ cha: nextChannel });
+  });
+
+  window.addEventListener("seisview:helicorder:progress", event => {
+    const { phase, pct } = event.detail;
+    _helicorderProgressLabel = phase === "refine" && pct < 100 ? `${pct}%` : "LIVE";
+    refreshStatus();
+  });
+
+  window.addEventListener("seisview:helicorder:state", event => {
+    _helicorderState = event.detail.state;
+
+    if (_helicorderState === "warming") {
+      _helicorderProgressLabel = "CARGANDO";
+    } else if (_helicorderState === "catching_up" && _helicorderProgressLabel === "LIVE") {
+      _helicorderProgressLabel = "0%";
     }
+
+    refreshStatus();
+  });
+}
+
+async function main() {
+  initTopNav();
+  registerUiListeners();
+  fillStaticDetails();
+  applyModeLayout();
+
+  if (isEventMode()) {
+    await runEventMode();
+  } else {
+    await runLiveMode();
+  }
 }
 
 main();
