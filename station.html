@@ -11,173 +11,202 @@
 
 <body>
 
-  <!-- ═══════════════════════════════════════════
-       BARRA DE NAVEGACIÓN SUPERIOR
-       Solo dos vistas: Estación (actual) y Mapa.
-  ═══════════════════════════════════════════ -->
+  <!-- ══════════════════════════════════
+       BARRA SUPERIOR (topnav)
+  ══════════════════════════════════ -->
   <nav class="topnav">
-    <div class="topnav__brand">SEISVIEW</div>
-    <div class="topnav__items">
-      <button class="topnav__item topnav__item--active" data-view="station">Estación</button>
-      <button class="topnav__item" data-view="map">Mapa</button>
-    </div>
+    <span class="topnav__brand">SEISVIEW</span>
+
+    <nav class="topnav__nav">
+      <button class="topnav__nav-btn topnav__nav-btn--active" id="nav-to-station">Estación</button>
+      <button class="topnav__nav-btn" id="nav-to-map">Mapa</button>
+    </nav>
+
     <div class="topnav__right">
-      <span class="topnav__utc" id="utc-clock">--:--:-- UTC</span>
+      <span class="topnav__mode" id="view-mode-badge">LIVE</span>
+      <span class="topnav__clock" id="utc-clock">--:--:-- UTC</span>
       <div class="topnav__status" id="status-indicator">
         <span class="status-dot"></span>
-        <span id="status-text">CONNECTING</span>
+        <span class="status__text" id="status-text">CONNECTING</span>
       </div>
     </div>
   </nav>
 
-  <!-- ═══════════════════════════════════════════
+  <!-- ══════════════════════════════════
        LAYOUT PRINCIPAL — 3 columnas
-  ═══════════════════════════════════════════ -->
+  ══════════════════════════════════ -->
   <div class="app-layout">
 
     <!-- ── COLUMNA IZQUIERDA: Lista de estaciones ── -->
     <aside class="col-stations">
       <div class="panel-header">
         <span class="panel-title">Estaciones</span>
-        <span class="panel-count" id="station-count"></span>
       </div>
-      <div class="search-box">
-        <input type="text" id="station-search" placeholder="Buscar (ej: OD.ALHM1)…" />
+      <div class="station-search">
+        <input type="text" id="station-search" placeholder="Buscar estación…" autocomplete="off" />
       </div>
       <div class="station-list" id="station-list">
-        <div class="station-list__empty">Conectando…</div>
+        <div class="station-list__empty">Cargando…</div>
       </div>
     </aside>
 
-    <!-- ── COLUMNA CENTRAL: Visualizaciones ── -->
+    <!-- ── COLUMNA CENTRAL: Gráficas ── -->
     <main class="col-charts">
 
       <div class="charts-header">
-        <h2 class="charts-title" id="title">Cargando…</h2>
-        <div class="tab-switcher">
-          <button class="tab-btn tab-btn--active" id="tab-waveform">Sismograma</button>
-          <button class="tab-btn" id="tab-helicorder">Helicorder</button>
+        <div class="charts-heading">
+          <h2 class="charts-title" id="title">Cargando…</h2>
+          <div class="charts-subtitle" id="event-title"></div>
+        </div>
+
+        <div class="charts-actions">
+          <label class="channel-picker" for="channel-select">
+            <span class="channel-picker__label">Canal</span>
+            <select id="channel-select" class="filter-select channel-picker__select">
+              <option value="">Cargando…</option>
+            </select>
+          </label>
+
+          <button class="view-toggle__btn view-toggle__btn--active" id="btn-view-live">
+            Sismograma
+          </button>
+          <button class="view-toggle__btn" id="btn-view-heli">
+            Helicorder
+          </button>
         </div>
       </div>
 
-      <!-- Vista Sismograma + Espectrograma -->
-      <div class="charts-view" id="view-waveform">
-        <section class="chart-box">
-          <span class="chart-label">SISMOGRAMA EN TIEMPO REAL</span>
+      <!-- ─ Vista A: Sismograma + Espectrograma ─ -->
+      <div class="view" id="view-live">
+
+        <section class="chart-box chart-box--waveform">
+          <span class="chart-box__label">SISMOGRAMA</span>
           <div id="waveform"></div>
         </section>
-        <section class="chart-box">
-          <span class="chart-label">ANÁLISIS ESPECTRAL (0–50 Hz)</span>
+
+        <section class="chart-box chart-box--spectrogram">
+          <span class="chart-box__label">ESPECTROGRAMA</span>
           <canvas id="spectrogram-canvas"></canvas>
         </section>
+
       </div>
 
-      <!-- Vista Helicorder (oculta por defecto) -->
-      <div class="charts-view charts-view--hidden" id="view-helicorder">
-        <section class="chart-box chart-box--full">
-          <span class="chart-label">HELICORDER — 24h</span>
-          <div class="placeholder-msg">Helicorder — próximamente</div>
+      <!-- ─ Vista B: Helicorder 24h ─ -->
+      <div class="view" id="view-helicorder" hidden>
+
+        <section class="chart-box chart-box--helicorder">
+          <span class="chart-box__label">HELICORDER — 24 h</span>
+          <div id="helicorder"></div>
         </section>
+
+      </div>
+
+      <div class="view view--hidden" id="view-event">
+        <div class="event-summary">
+          <div class="event-summary__intro" id="event-empty-state">
+            Selecciona un canal para generar la hoja resumen del evento.
+          </div>
+          <div class="event-summary__content" id="event-summary-content"></div>
+        </div>
       </div>
 
     </main>
 
-    <!-- ── COLUMNA DERECHA: Paneles de control ── -->
+    <!-- ── COLUMNA DERECHA: Detalles + filtros ── -->
     <aside class="col-controls">
 
-      <!-- ─ PANEL 1: Detalles de la estación ─
-           Fase 1 (inmediato): red/estación/canal desde URL params.
-           Fase 2 (async):     lat/lon/elevación/sensor desde FDSN StationXML.
-           Fase 3 (primer pkt): sps/encoding/recordSize desde header MiniSEED.
-           Fase 4 (cada pkt):  latencia/paquetes/última muestra en tiempo real. -->
+      <!-- ─ PANEL 1: Detalles (siempre visible) ─ -->
       <div class="ctrl-panel">
-        <div class="panel-header"><span class="panel-title">Detalles</span></div>
-        <div class="panel-body">
-
-          <div class="detail-group">
-            <div class="detail-row"><span class="dk">Red</span>       <span class="dv" id="d-net">—</span></div>
-            <div class="detail-row"><span class="dk">Estación</span>  <span class="dv" id="d-sta">—</span></div>
-            <div class="detail-row"><span class="dk">Canal</span>     <span class="dv" id="d-cha">—</span></div>
-            <div class="detail-row"><span class="dk">Ubicación</span> <span class="dv" id="d-loc">—</span></div>
-          </div>
-
-          <div class="detail-divider"></div>
-
-          <!-- Datos geográficos desde FDSN -->
-          <div class="detail-group">
-            <div class="detail-row"><span class="dk">Latitud</span>   <span class="dv" id="d-lat">—</span></div>
-            <div class="detail-row"><span class="dk">Longitud</span>  <span class="dv" id="d-lon">—</span></div>
-            <div class="detail-row"><span class="dk">Elevación</span> <span class="dv" id="d-ele">—</span></div>
-            <div class="detail-row"><span class="dk">Sensor</span>    <span class="dv" id="d-sensor">—</span></div>
-          </div>
-
-          <div class="detail-divider"></div>
-
-          <!-- Datos técnicos desde header MiniSEED -->
-          <div class="detail-group">
-            <div class="detail-row"><span class="dk">Muestras</span>    <span class="dv" id="d-sps">—</span></div>
-            <div class="detail-row"><span class="dk">Encoding</span>    <span class="dv" id="d-enc">—</span></div>
-            <div class="detail-row"><span class="dk">Tamaño rec.</span> <span class="dv" id="d-recsize">—</span></div>
-            <div class="detail-row"><span class="dk">Continuación</span><span class="dv" id="d-contcode">—</span></div>
-          </div>
-
-          <div class="detail-divider"></div>
-
-          <!-- Telemetría en vivo -->
-          <div class="detail-group">
-            <div class="detail-row"><span class="dk">Latencia</span>      <span class="dv" id="d-latency">—</span></div>
-            <div class="detail-row"><span class="dk">Paquetes</span>      <span class="dv" id="d-packets">0</span></div>
-            <div class="detail-row"><span class="dk">Última muestra</span><span class="dv mono-small" id="d-last">—</span></div>
-          </div>
-
+        <div class="panel-header">
+          <span class="panel-title">Detalles</span>
         </div>
-      </div>
+        <div class="ctrl-panel__body">
 
-      <!-- ─ PANEL 2: Canal activo ─ -->
-      <div class="ctrl-panel">
-        <div class="panel-header"><span class="panel-title">Canal activo</span></div>
-        <div class="panel-body">
-          <div class="channel-grid" id="channel-grid">
-            <button class="ch-btn ch-btn--active" data-channel="HHZ">HHZ</button>
-            <button class="ch-btn" data-channel="HHN">HHN</button>
-            <button class="ch-btn" data-channel="HHE">HHE</button>
-            <button class="ch-btn" data-channel="EHZ">EHZ</button>
-            <button class="ch-btn" data-channel="SHZ">SHZ</button>
+          <div class="detail-row">
+            <span class="detail-row__key">Red</span>
+            <span class="detail-row__val" id="d-net">—</span>
           </div>
-          <p class="hint-text">Selecciona un canal para reconectar.</p>
-        </div>
-      </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Estación</span>
+            <span class="detail-row__val" id="d-sta">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Canal</span>
+            <span class="detail-row__val" id="d-cha">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Modo</span>
+            <span class="detail-row__val" id="d-mode">LIVE</span>
+          </div>
 
-      <!-- ─ PANEL 3: Filtros personalizados ─ -->
-      <div class="ctrl-panel">
-        <div class="panel-header"><span class="panel-title">Filtros</span></div>
-        <div class="panel-body">
+          <div class="detail-divider"></div>
 
-          <!-- Bandpass para el sismograma -->
-          <div class="filter-block">
-            <div class="filter-label">Sismograma — Bandpass (Hz)</div>
-            <div class="filter-inputs">
-              <div class="filter-input-group">
-                <label>Mín</label>
-                <input type="number" id="wave-fmin" placeholder="ej: 1" min="0" step="0.1" />
-              </div>
-              <div class="filter-input-group">
-                <label>Máx</label>
-                <input type="number" id="wave-fmax" placeholder="ej: 10" min="0" step="0.1" />
-              </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Latitud</span>
+            <span class="detail-row__val" id="d-lat">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Longitud</span>
+            <span class="detail-row__val" id="d-lon">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Elevación</span>
+            <span class="detail-row__val" id="d-ele">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Canales</span>
+            <span class="detail-row__val" id="d-chan-count">—</span>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div id="event-detail-block" class="view--hidden">
+            <div class="detail-row">
+              <span class="detail-row__key">Evento</span>
+              <span class="detail-row__val" id="d-event-mag">—</span>
             </div>
-            <div class="filter-actions">
-              <button class="filter-apply-btn" id="wave-filter-apply">Aplicar</button>
-              <button class="filter-clear-btn" id="wave-filter-clear">Limpiar</button>
+            <div class="detail-row">
+              <span class="detail-row__key">Hora evento</span>
+              <span class="detail-row__val" id="d-event-time">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-row__key">Distancia</span>
+              <span class="detail-row__val" id="d-event-dist">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-row__key">Profundidad</span>
+              <span class="detail-row__val" id="d-event-depth">—</span>
             </div>
           </div>
 
           <div class="detail-divider"></div>
 
-          <!-- Rango de frecuencias del espectrograma -->
+          <div class="detail-row" id="telemetry-latency-row">
+            <span class="detail-row__key">Latencia</span>
+            <span class="detail-row__val" id="d-latency">—</span>
+          </div>
+          <div class="detail-row" id="telemetry-packets-row">
+            <span class="detail-row__key">Paquetes</span>
+            <span class="detail-row__val" id="d-packets">0</span>
+          </div>
+          <div class="detail-row" id="telemetry-last-row">
+            <span class="detail-row__key">Última muestra</span>
+            <span class="detail-row__val" id="d-last">—</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─ PANEL 2: Espectrograma (visible en vista "live") ─ -->
+      <div class="ctrl-panel" id="panel-spectrogram">
+        <div class="panel-header">
+          <span class="panel-title">Espectrograma</span>
+        </div>
+        <div class="ctrl-panel__body">
+
           <div class="filter-block">
-            <div class="filter-label">Espectrograma — Rango (Hz)</div>
-            <div class="filter-inputs">
+            <div class="filter-label">Frecuencia (Hz)</div>
+            <div class="filter-row">
               <div class="filter-input-group">
                 <label>Mín</label>
                 <input type="number" id="spec-fmin" value="0" min="0" step="1" />
@@ -188,35 +217,106 @@
               </div>
             </div>
             <div class="filter-actions">
-              <button class="filter-apply-btn" id="spec-filter-apply">Aplicar</button>
+              <button class="filter-btn filter-btn--apply" id="spec-freq-apply">Aplicar</button>
             </div>
           </div>
 
           <div class="detail-divider"></div>
 
-          <!-- Parámetros FFT -->
           <div class="filter-block">
-            <div class="filter-label">Ventana FFT (muestras)</div>
-            <div class="filter-inputs">
-              <input type="number" id="fft-window" value="256" min="64" max="4096" step="64" />
-              <button class="filter-apply-btn" id="fft-apply">Aplicar</button>
+            <div class="filter-label">Rango dB</div>
+            <div class="filter-row">
+              <div class="filter-input-group">
+                <label>Mín</label>
+                <input type="number" id="spec-dbmin" value="60" step="5" />
+              </div>
+              <div class="filter-input-group">
+                <label>Máx</label>
+                <input type="number" id="spec-dbmax" value="120" step="5" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button class="filter-btn filter-btn--apply" id="spec-db-apply">Aplicar</button>
             </div>
           </div>
 
-          <div class="filter-block" style="margin-top:8px">
+          <div class="detail-divider"></div>
+
+          <div class="filter-block">
+            <div class="filter-label">Ventana FFT (muestras)</div>
+            <div class="filter-row">
+              <input type="number" id="spec-fft" value="256" min="64" max="4096" step="64" />
+              <button class="filter-btn filter-btn--apply" id="spec-fft-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="filter-block">
             <div class="filter-label">Colormap</div>
-            <select id="fft-colormap" class="colormap-select">
-              <option value="inferno" selected>Inferno</option>
-              <option value="magma">Magma</option>
+            <select id="spec-colormap" class="filter-select">
               <option value="viridis">Viridis</option>
-              <option value="plasma">Plasma</option>
+              <option value="inferno" selected>Inferno</option>
+              <option value="grayscale">Grayscale</option>
+              <option value="jet">Jet</option>
+              <option value="hot">Hot</option>
+              <option value="cool">Cool</option>
+              <option value="spring">Spring</option>
+              <option value="summer">Summer</option>
+              <option value="autumn">Autumn</option>
+              <option value="winter">Winter</option>
+              <option value="bone">Bone</option>
             </select>
           </div>
 
         </div>
       </div>
 
+      <!-- ─ PANEL 3: Helicorder (visible en vista "helicorder") ─ -->
+      <div class="ctrl-panel" id="panel-helicorder" hidden>
+        <div class="panel-header">
+          <span class="panel-title">Helicorder</span>
+        </div>
+        <div class="ctrl-panel__body">
+
+          <!-- Número de líneas (duración por línea = 24h / numLines) -->
+          <div class="filter-block">
+            <div class="filter-label">Líneas</div>
+            <div class="filter-row">
+              <input type="number" id="heli-lines" value="12" min="4" max="48" step="1" />
+              <button class="filter-btn filter-btn--apply" id="heli-lines-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Amplitud fija: 0 = autoescala -->
+          <div class="filter-block">
+            <div class="filter-label">Amplitud (0 = auto)</div>
+            <div class="filter-row">
+              <input type="number" id="heli-amp" value="0" min="0" step="100" />
+              <button class="filter-btn filter-btn--apply" id="heli-amp-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Opciones de proceso -->
+          <div class="filter-block">
+            <div class="filter-label">Opciones</div>
+            <div class="filter-row">
+              <label class="filter-toggle">
+                <input type="checkbox" id="heli-detrend" checked />
+                <span>Detrend por línea</span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </aside>
+
   </div>
 
   <script type="module" src="/src/station/station.js"></script>

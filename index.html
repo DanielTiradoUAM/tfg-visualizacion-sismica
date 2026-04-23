@@ -2,15 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Visualización Sísmica - TFG Daniel</title>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./src/quakes/styles/quakes.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
     <link rel="icon" type="image/png" href="/favicon.ico" />
   </head>
 
-  <body>    
+  <body>
+    <nav class="topnav">
+      <span class="topnav__brand">SEISVIEW</span>
+
+      <nav class="topnav__nav">
+        <button class="topnav__nav-btn" id="nav-to-station">Estación</button>
+        <button class="topnav__nav-btn topnav__nav-btn--active" id="nav-to-map">Mapa</button>
+      </nav>
+
+      <div class="topnav__right">
+        <span class="topnav__mode topnav__mode--map">MAPA</span>
+        <span class="topnav__clock" id="utc-clock">--:--:-- UTC</span>
+      </div>
+    </nav>
+
     <div id="mapContainer">
       <sp-station-quake-map
         centerLat="37"
@@ -40,6 +57,11 @@
       <div id="stationColumn" class="panel-column station-column">
         <div id="stationName" class="station-name"></div>
         <div id="stationDetails" class="station-details"></div>
+        <div class="station-actions">
+          <button id="btnOpenStationView" class="btn-download hidden">
+            Abrir vista de estación
+          </button>
+        </div>
         <div class="download-container">
           <button id="btnDownloadMSeed" class="hidden btn-download">
             Descargar MiniSEED (.mseed)
