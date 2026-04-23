@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeisView | Estación</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/tfg-visualizacion-sismica/assets/station-MIJdPdk-.js"></script>
+  <link rel="modulepreload" crossorigin href="/tfg-visualizacion-sismica/assets/fdsnQueries-DnkoU3bc.js">
+  <link rel="stylesheet" crossorigin href="/tfg-visualizacion-sismica/assets/station-DGIL6a98.css">
+</head>
+
+<body>
+
+  <!-- ══════════════════════════════════
+       BARRA SUPERIOR (topnav)
+  ══════════════════════════════════ -->
+  <nav class="topnav">
+    <span class="topnav__brand">SEISVIEW</span>
+
+    <nav class="topnav__nav">
+      <button class="topnav__nav-btn topnav__nav-btn--active" id="nav-to-station">Estación</button>
+      <button class="topnav__nav-btn" id="nav-to-map">Mapa</button>
+    </nav>
+
+    <div class="topnav__right">
+      <span class="topnav__mode" id="view-mode-badge">LIVE</span>
+      <span class="topnav__clock" id="utc-clock">--:--:-- UTC</span>
+      <div class="topnav__status" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status__text" id="status-text">CONNECTING</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ══════════════════════════════════
+       LAYOUT PRINCIPAL — 3 columnas
+  ══════════════════════════════════ -->
+  <div class="app-layout">
+
+    <!-- ── COLUMNA IZQUIERDA: Lista de estaciones ── -->
+    <aside class="col-stations">
+      <div class="panel-header">
+        <span class="panel-title">Estaciones</span>
+      </div>
+      <div class="station-search">
+        <input type="text" id="station-search" placeholder="Buscar estación…" autocomplete="off" />
+      </div>
+      <div class="station-list" id="station-list">
+        <div class="station-list__empty">Cargando…</div>
+      </div>
+    </aside>
+
+    <!-- ── COLUMNA CENTRAL: Gráficas ── -->
+    <main class="col-charts">
+
+      <div class="charts-header">
+        <div class="charts-heading">
+          <h2 class="charts-title" id="title">Cargando…</h2>
+          <div class="charts-subtitle" id="event-title"></div>
+        </div>
+
+        <div class="charts-actions">
+          <label class="channel-picker" for="channel-select">
+            <span class="channel-picker__label">Canal</span>
+            <select id="channel-select" class="filter-select channel-picker__select">
+              <option value="">Cargando…</option>
+            </select>
+          </label>
+
+          <button class="view-toggle__btn view-toggle__btn--active" id="btn-view-live">
+            Sismograma
+          </button>
+          <button class="view-toggle__btn" id="btn-view-heli">
+            Helicorder
+          </button>
+        </div>
+      </div>
+
+      <!-- ─ Vista A: Sismograma + Espectrograma ─ -->
+      <div class="view" id="view-live">
+
+        <section class="chart-box chart-box--waveform">
+          <span class="chart-box__label">SISMOGRAMA</span>
+          <div id="waveform"></div>
+        </section>
+
+        <section class="chart-box chart-box--spectrogram">
+          <span class="chart-box__label">ESPECTROGRAMA</span>
+          <canvas id="spectrogram-canvas"></canvas>
+        </section>
+
+      </div>
+
+      <!-- ─ Vista B: Helicorder 24h ─ -->
+      <div class="view" id="view-helicorder" hidden>
+
+        <section class="chart-box chart-box--helicorder">
+          <span class="chart-box__label">HELICORDER — 24 h</span>
+          <div id="helicorder"></div>
+        </section>
+
+      </div>
+
+      <div class="view view--hidden" id="view-event">
+        <div class="event-summary">
+          <div class="event-summary__intro" id="event-empty-state">
+            Selecciona un canal para generar la hoja resumen del evento.
+          </div>
+          <div class="event-summary__content" id="event-summary-content"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ── COLUMNA DERECHA: Detalles + filtros ── -->
+    <aside class="col-controls">
+
+      <!-- ─ PANEL 1: Detalles (siempre visible) ─ -->
+      <div class="ctrl-panel">
+        <div class="panel-header">
+          <span class="panel-title">Detalles</span>
+        </div>
+        <div class="ctrl-panel__body">
+
+          <div class="detail-row">
+            <span class="detail-row__key">Red</span>
+            <span class="detail-row__val" id="d-net">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Estación</span>
+            <span class="detail-row__val" id="d-sta">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Canal</span>
+            <span class="detail-row__val" id="d-cha">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Modo</span>
+            <span class="detail-row__val" id="d-mode">LIVE</span>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="detail-row">
+            <span class="detail-row__key">Latitud</span>
+            <span class="detail-row__val" id="d-lat">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Longitud</span>
+            <span class="detail-row__val" id="d-lon">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Elevación</span>
+            <span class="detail-row__val" id="d-ele">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-row__key">Canales</span>
+            <span class="detail-row__val" id="d-chan-count">—</span>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div id="event-detail-block" class="view--hidden">
+            <div class="detail-row">
+              <span class="detail-row__key">Evento</span>
+              <span class="detail-row__val" id="d-event-mag">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-row__key">Hora evento</span>
+              <span class="detail-row__val" id="d-event-time">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-row__key">Distancia</span>
+              <span class="detail-row__val" id="d-event-dist">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-row__key">Profundidad</span>
+              <span class="detail-row__val" id="d-event-depth">—</span>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="detail-row" id="telemetry-latency-row">
+            <span class="detail-row__key">Latencia</span>
+            <span class="detail-row__val" id="d-latency">—</span>
+          </div>
+          <div class="detail-row" id="telemetry-packets-row">
+            <span class="detail-row__key">Paquetes</span>
+            <span class="detail-row__val" id="d-packets">0</span>
+          </div>
+          <div class="detail-row" id="telemetry-last-row">
+            <span class="detail-row__key">Última muestra</span>
+            <span class="detail-row__val" id="d-last">—</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─ PANEL 2: Espectrograma (visible en vista "live") ─ -->
+      <div class="ctrl-panel" id="panel-spectrogram">
+        <div class="panel-header">
+          <span class="panel-title">Espectrograma</span>
+        </div>
+        <div class="ctrl-panel__body">
+
+          <div class="filter-block">
+            <div class="filter-label">Frecuencia (Hz)</div>
+            <div class="filter-row">
+              <div class="filter-input-group">
+                <label>Mín</label>
+                <input type="number" id="spec-fmin" value="0" min="0" step="1" />
+              </div>
+              <div class="filter-input-group">
+                <label>Máx</label>
+                <input type="number" id="spec-fmax" value="50" min="0" step="1" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button class="filter-btn filter-btn--apply" id="spec-freq-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="filter-block">
+            <div class="filter-label">Rango dB</div>
+            <div class="filter-row">
+              <div class="filter-input-group">
+                <label>Mín</label>
+                <input type="number" id="spec-dbmin" value="60" step="5" />
+              </div>
+              <div class="filter-input-group">
+                <label>Máx</label>
+                <input type="number" id="spec-dbmax" value="120" step="5" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <button class="filter-btn filter-btn--apply" id="spec-db-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="filter-block">
+            <div class="filter-label">Ventana FFT (muestras)</div>
+            <div class="filter-row">
+              <input type="number" id="spec-fft" value="256" min="64" max="4096" step="64" />
+              <button class="filter-btn filter-btn--apply" id="spec-fft-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <div class="filter-block">
+            <div class="filter-label">Colormap</div>
+            <select id="spec-colormap" class="filter-select">
+              <option value="viridis">Viridis</option>
+              <option value="inferno" selected>Inferno</option>
+              <option value="grayscale">Grayscale</option>
+              <option value="jet">Jet</option>
+              <option value="hot">Hot</option>
+              <option value="cool">Cool</option>
+              <option value="spring">Spring</option>
+              <option value="summer">Summer</option>
+              <option value="autumn">Autumn</option>
+              <option value="winter">Winter</option>
+              <option value="bone">Bone</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─ PANEL 3: Helicorder (visible en vista "helicorder") ─ -->
+      <div class="ctrl-panel" id="panel-helicorder" hidden>
+        <div class="panel-header">
+          <span class="panel-title">Helicorder</span>
+        </div>
+        <div class="ctrl-panel__body">
+
+          <!-- Número de líneas (duración por línea = 24h / numLines) -->
+          <div class="filter-block">
+            <div class="filter-label">Líneas</div>
+            <div class="filter-row">
+              <input type="number" id="heli-lines" value="12" min="4" max="48" step="1" />
+              <button class="filter-btn filter-btn--apply" id="heli-lines-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Amplitud fija: 0 = autoescala -->
+          <div class="filter-block">
+            <div class="filter-label">Amplitud (0 = auto)</div>
+            <div class="filter-row">
+              <input type="number" id="heli-amp" value="0" min="0" step="100" />
+              <button class="filter-btn filter-btn--apply" id="heli-amp-apply">Aplicar</button>
+            </div>
+          </div>
+
+          <div class="detail-divider"></div>
+
+          <!-- Opciones de proceso -->
+          <div class="filter-block">
+            <div class="filter-label">Opciones</div>
+            <div class="filter-row">
+              <label class="filter-toggle">
+                <input type="checkbox" id="heli-detrend" checked />
+                <span>Detrend por línea</span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+
+</body>
+</html>
