@@ -14,7 +14,9 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "fft.js": "^4.0.4",
     "leaflet.geodesic": "^2.7.2",
+    "leaflet.heat": "^0.2.0",
     "spectrogram-js": "^1.1.2"
   }
 }

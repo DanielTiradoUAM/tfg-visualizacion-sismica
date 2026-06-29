@@ -1,0 +1,130 @@
+.topnav {
+  height: var(--nav-h);
+  min-height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.topnav__brand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: var(--text-accent);
+}
+
+.topnav__nav {
+  display: flex;
+  gap: 2px;
+}
+
+.topnav__nav-btn {
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: color 0.12s, background 0.12s;
+}
+
+.topnav__nav-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.topnav__nav-btn--active {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.topnav__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topnav__clock,
+.topnav__mode,
+.topnav__status {
+  font-family: var(--font-mono);
+}
+
+.topnav__clock,
+.topnav__status {
+  color: var(--text-muted);
+}
+
+.topnav__clock,
+.topnav__mode {
+  font-size: 11px;
+}
+
+.topnav__mode {
+  color: var(--text-accent);
+  letter-spacing: 0.08em;
+}
+
+.topnav__mode--map {
+  color: var(--text-warn);
+}
+
+.topnav__status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.topnav__status--live .status-dot {
+  background: var(--text-live);
+  animation: blink 2s infinite;
+}
+
+.topnav__status--live .status__text {
+  color: var(--text-live);
+}
+
+.topnav__status--error .status-dot {
+  background: var(--text-danger);
+}
+
+.topnav__status--error .status__text {
+  color: var(--text-danger);
+}
+
+.topnav__status--loading .status-dot {
+  background: var(--text-warn);
+}
+
+.topnav__status--loading .status__text {
+  color: var(--text-warn);
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+

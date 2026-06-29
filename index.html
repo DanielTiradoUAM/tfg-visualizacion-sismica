@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,7 +7,9 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./src/quakes/styles/quakes.css" />
+    <link rel="stylesheet" href="./src/shared/styles/base.css" />
+    <link rel="stylesheet" href="./src/shared/styles/topnav.css" />
+    <link rel="stylesheet" href="./src/features/quakes/styles/quakes.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
     <link rel="icon" type="image/png" href="/favicon.ico" />
@@ -59,11 +61,11 @@
         <div id="stationDetails" class="station-details"></div>
         <div class="station-actions">
           <button id="btnOpenStationView" class="btn-download hidden">
-            Abrir vista de estación
+            Ver estación en vivo
           </button>
         </div>
         <div class="download-container">
-          <button id="btnDownloadMSeed" class="hidden btn-download">
+          <button id="btnDownloadMSeed" class="hidden btn-download" disabled>
             Descargar MiniSEED (.mseed)
           </button>
         </div>

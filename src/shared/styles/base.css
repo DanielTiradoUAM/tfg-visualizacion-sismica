@@ -1,0 +1,42 @@
+:root {
+  --bg: #0d0f12;
+  --bg-panel: #111318;
+  --bg-input: #0a0c0f;
+  --bg-hover: #181b22;
+  --bg-active: #1a2540;
+  --text: #d8dce8;
+  --text-muted: #7f879f;
+  --text-dim: #3a4054;
+  --text-accent: #5b8df5;
+  --text-live: #4ade80;
+  --text-warn: #f59e0b;
+  --text-danger: #f87171;
+  --border: #1c1f2a;
+  --accent: #3b6fd4;
+  --accent-dim: #162040;
+  --radius: 4px;
+  --nav-h: 40px;
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+}
+

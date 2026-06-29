@@ -1,0 +1,776 @@
+/* ═══════════════════════════════════════════════
+   station.css — Estilos de la vista de estación.
+   Metodología BEM: .bloque__elemento--modificador
+   Fuentes: JetBrains Mono (datos) + Inter (UI)
+═══════════════════════════════════════════════ */
+
+/* ── Variables globales de color y tamaño ─────────── */
+:root {
+    --bg:          #0d0f12;   /* Fondo general */
+    --bg-panel:    #111318;   /* Fondo paneles (nav, laterales) */
+    --bg-input:    #0a0c0f;   /* Fondo de inputs */
+    --bg-hover:    #181b22;   /* Fondo al pasar el ratón */
+    --bg-active:   #1a2540;   /* Fondo elemento seleccionado */
+  
+    --text:        #d8dce8;   /* Texto principal */
+    --text-muted:  #525870;   /* Texto secundario */
+    --text-dim:    #2e3245;   /* Texto muy apagado (placeholders, separadores) */
+    --text-accent: #5b8df5;   /* Azul acento */
+    --text-live:   #4ade80;   /* Verde "en vivo" */
+    --text-warn:   #f59e0b;   /* Amarillo advertencia */
+    --text-danger: #f87171;   /* Rojo error */
+  
+    --border:      #1c1f2a;   /* Color de bordes */
+    --accent:      #3b6fd4;   /* Azul para botones activos */
+    --accent-dim:  #162040;   /* Fondo azul muy oscuro */
+  
+    --col-left:  200px;       /* Ancho columna izquierda */
+    --col-right: 200px;       /* Ancho columna derecha */
+    --nav-h:     40px;        /* Alto de la barra superior */
+  
+    --font-ui:   'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --radius:    4px;
+  }
+  
+  /* ── Reset mínimo ─────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: var(--font-ui);
+    background:  var(--bg);
+    color:       var(--text);
+    font-size:   13px;
+    line-height: 1.5;
+    height:      100vh;
+    display:     flex;
+    flex-direction: column;
+    overflow:    hidden;   /* Sin scroll en el body; cada columna hace scroll por sí sola */
+  }
+  
+  /* ═══════════════════════════════════════════════
+     TOPNAV — Barra superior
+     Bloques BEM: .topnav / .topnav__brand / .topnav__right / etc.
+  ═══════════════════════════════════════════════ */
+  
+  .topnav {
+    height:      var(--nav-h);
+    min-height:  var(--nav-h);
+    display:     flex;
+    align-items: center;
+    gap:         12px;
+    padding:     0 14px;
+    background:  var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0; /* No se comprime aunque la pantalla sea pequeña */
+  }
+  
+  /* Nombre de la app (esquina izquierda) */
+  .topnav__brand {
+    font-family:     var(--font-mono);
+    font-size:       11px;
+    font-weight:     500;
+    letter-spacing:  0.15em;
+    color:           var(--text-accent);
+  }
+  
+  /* Grupo de botones de navegación */
+  .topnav__nav { display: flex; gap: 2px; }
+  
+  .topnav__nav-btn {
+    padding:       4px 10px;
+    border:        none;
+    background:    transparent;
+    color:         var(--text-muted);
+    font-family:   var(--font-ui);
+    font-size:     12px;
+    cursor:        pointer;
+    border-radius: var(--radius);
+    transition:    color 0.12s, background 0.12s;
+  }
+  .topnav__nav-btn:hover           { color: var(--text); background: var(--bg-hover); }
+  .topnav__nav-btn--active         { color: var(--text); background: var(--bg-active); }
+  
+  /* Zona derecha: reloj + estado de conexión */
+  .topnav__right {
+    margin-left:  auto;
+    display:      flex;
+    align-items:  center;
+    gap:          14px;
+  }
+  
+  .topnav__clock {
+    font-family: var(--font-mono);
+    font-size:   11px;
+    color:       var(--text-muted);
+  }
+
+  .topnav__mode {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-accent);
+    letter-spacing: 0.08em;
+  }
+  
+  /* Indicador de conexión: punto de color + texto */
+  .topnav__status {
+    display:     flex;
+    align-items: center;
+    gap:         5px;
+    font-family: var(--font-mono);
+    font-size:   10px;
+    color:       var(--text-muted);
+  }
+  
+  .status-dot {
+    width:         6px;
+    height:        6px;
+    border-radius: 50%;
+    background:    var(--text-muted); /* Color por defecto (gris = conectando) */
+    flex-shrink:   0;
+  }
+  
+  /* Modificadores de estado (se añaden con JS en el elemento .topnav__status) */
+  .topnav__status--live  .status-dot { background: var(--text-live); animation: blink 2s infinite; }
+  .topnav__status--live  .status__text { color: var(--text-live); }
+  .topnav__status--error .status-dot { background: var(--text-danger); }
+  .topnav__status--error .status__text { color: var(--text-danger); }
+  
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+  
+  /* ═══════════════════════════════════════════════
+     APP-LAYOUT — 3 columnas con CSS Grid
+  ═══════════════════════════════════════════════ */
+  
+  .app-layout {
+    display: grid;
+    grid-template-columns: var(--col-left) 1fr var(--col-right);
+    flex:       1;
+    overflow:   hidden;
+    min-height: 0;
+  }
+  
+  /* ── Cabecera reutilizable para paneles laterales ─ */
+  .panel-header {
+    display:         flex;
+    align-items:     center;
+    padding:         8px 10px;
+    border-bottom:   1px solid var(--border);
+    flex-shrink:     0;
+  }
+  
+  .panel-title {
+    font-size:      10px;
+    font-weight:    500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color:          var(--text-muted);
+  }
+  
+  /* ═══════════════════════════════════════════════
+     COL-STATIONS — Columna izquierda
+  ═══════════════════════════════════════════════ */
+  
+  .col-stations {
+    display:        flex;
+    flex-direction: column;
+    background:     var(--bg-panel);
+    border-right:   1px solid var(--border);
+    overflow:       hidden;
+  }
+  
+  /* Buscador de estaciones */
+  .station-search {
+    padding:      5px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink:  0;
+  }
+  
+  .station-search input {
+    width:         100%;
+    background:    var(--bg-input);
+    border:        1px solid var(--border);
+    border-radius: var(--radius);
+    padding:       4px 8px;
+    font-family:   var(--font-mono);
+    font-size:     11px;
+    color:         var(--text);
+    outline:       none;
+    transition:    border-color 0.12s;
+  }
+  .station-search input::placeholder { color: var(--text-dim); }
+  .station-search input:focus        { border-color: var(--accent); }
+  
+  /* Lista de estaciones con scroll */
+  .station-list {
+    flex:           1;
+    overflow-y:     auto;
+    padding:        4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  
+  /* Mensaje cuando no hay estaciones */
+  .station-list__empty {
+    padding:   12px 10px;
+    font-size: 11px;
+    color:     var(--text-dim);
+  }
+  
+  /* Ítem individual de estación */
+  .station-item {
+    display:      flex;
+    align-items:  center;
+    gap:          7px;
+    padding:      5px 10px;
+    cursor:       pointer;
+    font-family:  var(--font-mono);
+    font-size:    11px;
+    color:        var(--text-muted);
+    border-left:  2px solid transparent;
+    transition:   background 0.1s, color 0.1s;
+  }
+  .station-item:hover         { background: var(--bg-hover); color: var(--text); }
+  .station-item--active       { background: var(--bg-active); color: var(--text); border-left-color: var(--accent); }
+  
+  /* Punto de estado (verde/amarillo/rojo) */
+  .station-item__dot {
+    width:         5px;
+    height:        5px;
+    border-radius: 50%;
+    flex-shrink:   0;
+    background:    var(--text-muted);
+  }
+  .station-item__dot--online  { background: var(--text-live); }
+  .station-item__dot--offline { background: var(--text-danger); }
+  
+  /* ═══════════════════════════════════════════════
+     COL-CHARTS — Columna central (gráficas)
+  ═══════════════════════════════════════════════ */
+  
+  .col-charts {
+    display:        flex;
+    flex-direction: column;
+    overflow:       hidden;
+    min-width:      0;
+  }
+  
+  /* Cabecera de la zona de gráficas */
+  .charts-header {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             12px;
+    padding:         7px 12px;
+    border-bottom:   1px solid var(--border);
+    background:      var(--bg-panel);
+    flex-shrink:     0;
+  }
+
+  .charts-heading {
+    min-width: 0;
+  }
+
+  .charts-title {
+    font-family: var(--font-mono);
+    font-size:   14px;
+    font-weight: 500;
+    color:       var(--text);
+  }
+
+  .charts-subtitle {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .charts-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .channel-picker {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .channel-picker__label {
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .channel-picker__select {
+    min-width: 110px;
+  }
+  
+  /* Cada sección de gráfica ocupa el espacio disponible */
+  .chart-box {
+    position:   relative;
+    flex:       1;
+    min-height: 0;
+    border-bottom: 1px solid var(--border);
+    overflow:   hidden;
+  }
+  .chart-box:last-child { border-bottom: none; }
+  
+  /* El sismograma ocupa más espacio que el espectrograma */
+  .chart-box--waveform    { flex: 4; }
+  .chart-box--spectrogram { flex: 4; }
+  
+  /* Etiqueta superpuesta en la esquina de la gráfica */
+  .chart-box__label {
+    position:      absolute;
+    top:           8px;
+    left:          90px;   /* Separado del eje Y de seisplotjs */
+    font-family:   var(--font-mono);
+    font-size:     9px;
+    color:         var(--text-dim);
+    z-index:       5;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+  }
+  
+  /* Ajustes específicos para seisplotjs (#waveform) y el canvas del espectrograma */
+  #waveform {
+    width:        calc(100% - 35px) !important;
+    padding-left: 20px;
+    padding-bottom: 20px;
+    padding-top: 20px;
+    height:       400px;
+    --sp-seismograph-height: 400px;
+  }
+
+
+  
+  #spectrogram-canvas {
+    display:  block;
+    position: relative;
+    left:     50px;
+    top:      15px;
+    width:    calc(100% - 45px) !important;
+    height:   calc(100% - 20px);
+  }
+  
+  /* ═══════════════════════════════════════════════
+     COL-CONTROLS — Columna derecha (detalles)
+  ═══════════════════════════════════════════════ */
+  
+  .col-controls {
+    display:        flex;
+    flex-direction: column;
+    background:     var(--bg-panel);
+    border-left:    1px solid var(--border);
+    overflow-y:     auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  
+  /* Cada panel dentro de la columna derecha */
+  .ctrl-panel {
+    border-bottom: 1px solid var(--border);
+    flex-shrink:   0;
+  }
+  
+  .ctrl-panel__body { padding: 9px 10px; }
+  
+  /* Fila de detalle: etiqueta izquierda + valor derecha */
+  .detail-row {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     baseline;
+    gap:             6px;
+    margin-bottom:   3px;
+  }
+  
+  .detail-row__key {
+    font-size: 10px;
+    color:     var(--text-muted);
+  }
+  
+  .detail-row__val {
+    font-family:   var(--font-mono);
+    font-size:     10px;
+    color:         var(--text);
+    text-align:    right;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+    max-width:     110px;
+  }
+
+  #event-detail-block.view--hidden {
+    display: none;
+  }
+  
+  /* Separador horizontal entre grupos de detalles */
+  .detail-divider {
+    height:     1px;
+    background: var(--border);
+    margin:     7px 0;
+  }
+  
+  /* ═══════════════════════════════════════════════
+     PANEL DE FILTROS (espectrograma)
+  ═══════════════════════════════════════════════ */
+  
+  /* Bloque de un filtro individual */
+  .filter-block {
+    margin-bottom: 2px;
+  }
+  
+  /* Etiqueta del filtro */
+  .filter-label {
+    font-size:     10px;
+    color:         var(--text-muted);
+    margin-bottom: 5px;
+  }
+  
+  /* Fila de inputs dentro de un filtro */
+  .filter-row {
+    display:     flex;
+    align-items: center;
+    gap:         5px;
+    flex-wrap:   wrap;
+  }
+  
+  /* Par etiqueta+input */
+  .filter-input-group {
+    display:     flex;
+    align-items: center;
+    gap:         3px;
+  }
+  
+  .filter-input-group label {
+    font-size: 10px;
+    color:     var(--text-muted);
+  }
+  
+  /* Inputs numéricos de los filtros */
+  .filter-input-group input,
+  #spec-fft {
+    width:         55px;
+    background:    var(--bg-input);
+    border:        1px solid var(--border);
+    border-radius: var(--radius);
+    padding:       3px 5px;
+    font-family:   var(--font-mono);
+    font-size:     10px;
+    color:         var(--text);
+    outline:       none;
+    transition:    border-color 0.12s;
+  }
+  
+  .filter-input-group input:focus,
+  #spec-fft:focus { border-color: var(--accent); }
+  
+  /* Fila de botones Aplicar / Reset */
+  .filter-actions {
+    display:    flex;
+    gap:        4px;
+    margin-top: 5px;
+  }
+  
+  /* Botón Aplicar */
+  .filter-btn {
+    font-family:   var(--font-ui);
+    font-size:     10px;
+    padding:       3px 8px;
+    border-radius: var(--radius);
+    cursor:        pointer;
+    transition:    all 0.12s;
+  }
+  
+  .filter-btn--apply {
+    background: var(--accent-dim);
+    border:     1px solid var(--accent);
+    color:      var(--text-accent);
+  }
+  .filter-btn--apply:hover { background: var(--accent); color: #fff; }
+
+  .filter-btn--return-live {
+    width:      100%;
+    background: rgba(74, 222, 128, 0.12);
+    border:     1px solid var(--text-live);
+    color:      var(--text-live);
+  }
+  .filter-btn--return-live:hover {
+    background: var(--text-live);
+    color:      #06120b;
+  }
+  
+  
+  /* Select de colormap */
+  .filter-select {
+    width:         100%;
+    background:    var(--bg-input);
+    border:        1px solid var(--border);
+    border-radius: var(--radius);
+    color:         var(--text);
+    font-family:   var(--font-mono);
+    font-size:     10px;
+    padding:       3px 6px;
+    outline:       none;
+    cursor:        pointer;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+
+
+
+  /* ═══════════════════════════════════════════════
+   TOGGLE DE VISTA (Sismograma / Helicorder)
+═══════════════════════════════════════════════ */
+
+.view-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.view-toggle__btn {
+  padding:       3px 10px;
+  border:        1px solid var(--border);
+  background:    transparent;
+  color:         var(--text-muted);
+  font-family:   var(--font-ui);
+  font-size:     11px;
+  cursor:        pointer;
+  border-radius: var(--radius);
+  transition:    all 0.12s;
+}
+.view-toggle__btn:hover {
+  color:      var(--text);
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+.view-toggle__btn--active {
+  background:   var(--accent-dim);
+  color:        var(--text-accent);
+  border-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════
+   CONTENEDORES DE VISTA
+   Cada <div class="view"> es una "pantalla" que
+   ocupa todo el espacio disponible en col-charts.
+═══════════════════════════════════════════════ */
+
+.view {
+  display:        flex;
+  flex-direction: column;
+  flex:           1;
+  min-height:     0;
+  overflow:       hidden;
+}
+
+/* Sustituye .view[hidden] y .ctrl-panel[hidden] por esto: */
+.view--hidden,
+.ctrl-panel.view--hidden {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+}
+
+.event-summary {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(91, 141, 245, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(17, 19, 24, 0.98), rgba(13, 15, 18, 0.98));
+}
+
+
+
+.event-summary__intro,
+.event-summary__message {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--text-muted);
+  background: rgba(10, 12, 15, 0.65);
+}
+
+.event-summary__message--warning {
+  color: var(--text-warn);
+}
+
+.event-summary__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.event-summary__section {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(17, 19, 24, 0.9);
+  min-height: 240px;
+  padding: 24px 16px 16px;
+  overflow: hidden;
+}
+
+.event-summary__section--waveform {
+  min-height: 280px;
+}
+
+.event-summary__label {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.event-summary__plot-host {
+  width: 100%;
+  height: 100%;
+}
+
+.event-summary__plot-host--waveform {
+  min-height: 240px;
+}
+
+.event-summary__plot-host--spectrogram {
+  height: 240px;
+  position: relative;
+}
+
+.event-summary__plot-host--spectra {
+  min-height: 200px;
+}
+
+.event-summary__spectrogram {
+  display: block;
+  width: 100%;
+  height: 240px;
+}
+
+sp-spectra {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ═══════════════════════════════════════════════
+   HELICORDER — contenedor y custom element
+═══════════════════════════════════════════════ */
+
+.chart-box--helicorder {
+  flex:          1;
+  border-bottom: none;   /* único hijo, sin separador inferior */
+}
+
+/* seisplotjs usa getBoundingClientRect() → necesita altura explícita */
+#helicorder {
+  position:   relative;
+  height:     100%;
+  min-height: 600px;
+}
+
+.helicorder-host {
+  position:   relative;
+  height:     100%;
+  min-height: 600px;
+}
+
+.helicorder-placeholder {
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+  position:       absolute;
+  inset:          0;
+  padding:        24px;
+  color:          var(--text-dim);
+  font-family:    var(--font-mono);
+  font-size:      12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align:     center;
+  pointer-events: none;
+  z-index:        1;
+}
+
+/* El custom element <sp-helicorder> es inline por defecto */
+sp-helicorder {
+  display: block;
+  height:  100%;
+  width:   100%;
+}
+
+/* ═══════════════════════════════════════════════
+   INPUTS SUELTOS DEL PANEL HELICORDER
+   (misma apariencia que #spec-fft)
+═══════════════════════════════════════════════ */
+
+#heli-lines,
+#heli-amp {
+  width:         55px;
+  background:    var(--bg-input);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       3px 5px;
+  font-family:   var(--font-mono);
+  font-size:     10px;
+  color:         var(--text);
+  outline:       none;
+  transition:    border-color 0.12s;
+}
+#heli-lines:focus,
+#heli-amp:focus { border-color: var(--accent); }
+
+/* Checkbox + label en el panel de filtros */
+.filter-toggle {
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+  cursor:      pointer;
+  font-size:   10px;
+  color:       var(--text-muted);
+  user-select: none;
+}
+.filter-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor:       pointer;
+}
+
+
+/* Estado de carga (catch-up histórico) */
+.topnav__status--loading .status-dot {
+  background: var(--text-warn);
+  animation: blink 1s infinite;
+}
+.topnav__status--loading .status__text {
+  color: var(--text-warn);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .charts-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .charts-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
